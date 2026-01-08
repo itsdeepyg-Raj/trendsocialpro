@@ -2,37 +2,50 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>TrendSocial Pro</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- React & Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Firebase App (Compat Version for maximum stability in single HTML files) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #09090b; color: #f4f4f5; margin: 0; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        body { background-color: #09090b; color: white; font-family: sans-serif; margin: 0; }
-        [data-lucide] { display: inline-block; vertical-align: middle; }
-        input::placeholder { color: #52525b; }
-        .animate-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .aspect-3-4 { aspect-ratio: 3 / 4; }
+        .glass { background: rgba(18, 18, 18, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+        .btn-primary { background: white; color: black; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; }
+        .btn-primary:active { transform: scale(0.95); }
+        input, select, textarea { background: #18181b !important; border: 1px solid #27272a !important; color: white !important; }
+        input:focus, select:focus, textarea:focus { border-color: #6366f1 !important; outline: none; }
+        
+        #media-preview-container { transition: all 0.3s ease-in-out; }
     </style>
 </head>
-<body>
-    <div id="root"></div>
+<body class="bg-black">
 
-    <script type="text/babel">
-        // --- 1. FIREBASE INITIALIZATION ---
+    <div id="app" class="max-w-md mx-auto h-screen flex flex-col relative overflow-hidden bg-zinc-950 shadow-2xl">
+        <div id="loading" class="flex-1 flex items-center justify-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500"></div>
+        </div>
+    </div>
+
+    <div id="recaptcha-container"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { 
+            getAuth, onAuthStateChanged, signOut, reload, signInAnonymously, 
+            RecaptchaVerifier, signInWithPhoneNumber, 
+            sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink 
+        } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { 
+            getFirestore, collection, doc, setDoc, getDoc, 
+            addDoc, onSnapshot, query, serverTimestamp, deleteDoc, updateDoc, increment 
+        } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+
+        // ==========================================
+        // 1. CONFIGURATION
+        // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyCP7HsmoQyMeenWxhTAcgBoRs-6ErtzhJs",
             authDomain: "trend-social-88546.firebaseapp.com",
@@ -42,227 +55,499 @@
             appId: "1:859903608854:web:82b46edf364994f7cbcd37"
         };
 
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-        const appId = 'trend-social-v1-production';
+        const appId = 'trend-social-v5-prod'; 
+        const HELP_WHATSAPP = "+1234567890";  
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-        const { useState, useEffect, useRef } = React;
+        let currentUser = null;
+        let isAdmin = false;
+        let products = [];
+        let wishlist = new Set();
+        let activeView = 'feed';
+        let activeCategory = 'all';
+        let selectedProduct = null;
+        let activeChatRecipient = null;
+        let listenersInitialized = false;
+        let confirmationResult = null;
+        let currentAuthMode = 'email';
 
-        // Icon Helper for Lucide
-        const Icon = ({ name, size = 24, className = "" }) => {
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
+        const appContainer = document.getElementById('app');
+
+        // --- AUTH LOGIC ---
+        const handleEmailLinkSignIn = async () => {
+            if (isSignInWithEmailLink(auth, window.location.href)) {
+                let email = window.localStorage.getItem('emailForSignIn');
+                if (!email) email = window.prompt('Please provide your email for confirmation');
+                try {
+                    await signInWithEmailLink(auth, email, window.location.href);
+                    window.localStorage.removeItem('emailForSignIn');
+                    activeView = 'feed';
+                } catch (error) { alert("Login Error: " + error.message); }
+            }
         };
 
-        const App = () => {
-            const [user, setUser] = useState(null);
-            const [authMode, setAuthMode] = useState('login');
-            const [appMode, setAppMode] = useState('selector');
-            const [activeTab, setActiveTab] = useState('feed');
-            const [adminTab, setAdminTab] = useState('sellers');
-            
-            const [sellerProfile, setSellerProfile] = useState(null);
-            const [myProfile, setMyProfile] = useState(null);
-            const [products, setProducts] = useState([]);
-            const [allSellers, setAllSellers] = useState([]);
-            const [allProfiles, setAllProfiles] = useState([]);
-            const [allMessages, setAllMessages] = useState([]);
-            const [isLoading, setIsLoading] = useState(true);
-            const [activeChatId, setActiveChatId] = useState(null);
+        const initAuth = async () => {
+            await handleEmailLinkSignIn();
+            onAuthStateChanged(auth, async (user) => {
+                currentUser = user;
+                if (user) {
+                    if (!listenersInitialized) {
+                        initListeners();
+                        listenersInitialized = true;
+                    }
+                    if (!user.isAnonymous) {
+                        const adminRef = doc(db, 'artifacts', appId, 'public', 'data', 'adminConfig', 'settings');
+                        try {
+                            const adminSnap = await getDoc(adminRef);
+                            if (adminSnap.exists()) {
+                                isAdmin = adminSnap.data().ownerId === user.uid;
+                            } else {
+                                await setDoc(adminRef, { ownerId: user.uid });
+                                isAdmin = true;
+                            }
+                        } catch (e) { console.error("Admin check fail:", e); }
+                    }
+                } else {
+                    signInAnonymously(auth);
+                }
+                render();
+            });
+        };
 
-            useEffect(() => {
-                const unsub = auth.onAuthStateChanged(u => {
-                    setUser(u);
-                    if (!u) setIsLoading(false);
+        const initListeners = () => {
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'products'), (snapshot) => {
+                products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                render();
+            });
+            if (currentUser && !currentUser.isAnonymous) {
+                onSnapshot(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'wishlist'), (snapshot) => {
+                    wishlist = new Set(snapshot.docs.map(d => d.id));
+                    render();
                 });
-                return () => unsub();
-            }, []);
+            }
+        };
 
-            useEffect(() => {
-                if (!user) return;
+        window.setView = (view, params = null) => {
+            activeView = view;
+            if (params) {
+                if (view === 'product') selectedProduct = params;
+                if (view === 'chat') activeChatRecipient = params;
+            }
+            render();
+        };
 
-                // Sync My Profile
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid)
-                    .onSnapshot(snap => {
-                        if (snap.exists) setMyProfile(snap.data());
-                        else db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').doc(user.uid).set({
-                            uid: user.uid, name: user.email.split('@')[0], role: 'user', joinedAt: new Date().toISOString()
-                        });
-                    });
+        window.toggleWishlist = async (productId) => {
+            if (currentUser.isAnonymous) { setView('auth'); return; }
+            const wishRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'wishlist', productId);
+            const prodRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', productId);
+            if (wishlist.has(productId)) {
+                await deleteDoc(wishRef);
+                await updateDoc(prodRef, { wishlistCount: increment(-1) });
+            } else {
+                await setDoc(wishRef, { addedAt: serverTimestamp() });
+                await updateDoc(prodRef, { wishlistCount: increment(1) });
+            }
+        };
 
-                // Sync Global Data
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('products').onSnapshot(s => setProducts(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sellers').onSnapshot(s => setAllSellers(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('profiles').onSnapshot(s => setAllProfiles(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('messages').onSnapshot(s => setAllMessages(s.docs.map(d => ({id: d.id, ...d.data()}))));
-                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sellers').doc(user.uid).onSnapshot(s => setSellerProfile(s.exists ? s.data() : null));
+        // --- RENDER ---
+        function render() {
+            if (!currentUser) return;
+            switch (activeView) {
+                case 'feed': renderFeed(); break;
+                case 'product': renderProductDetail(); break;
+                case 'admin': renderSellerHub(); break;
+                case 'messages': renderInbox(); break;
+                case 'chat': renderChat(); break;
+                case 'profile': renderProfile(); break;
+                case 'help': renderHelp(); break;
+                case 'wishlist': renderWishlistView(); break;
+                case 'auth': renderAuth(); break;
+                default: renderFeed();
+            }
+            lucide.createIcons();
+        }
 
-                setIsLoading(false);
-            }, [user]);
+        function renderHeader() {
+            return `
+                <header class="p-4 border-b border-zinc-900 flex justify-between items-center glass sticky top-0 z-50">
+                    <h1 onclick="setView('feed')" class="text-xl font-black tracking-tighter cursor-pointer italic uppercase">Trend<span class="text-indigo-500 font-black">Social</span></h1>
+                    <div class="flex gap-1">
+                        <button onclick="setView('wishlist')" class="p-2 hover:bg-zinc-800 rounded-full text-rose-500"><i data-lucide="heart"></i></button>
+                        ${isAdmin ? `<button onclick="setView('admin')" class="p-2 hover:bg-zinc-800 rounded-full text-amber-500"><i data-lucide="shield-check"></i></button>` : ''}
+                        <button onclick="setView('help')" class="p-2 hover:bg-zinc-800 rounded-full text-zinc-400"><i data-lucide="help-circle"></i></button>
+                    </div>
+                </header>
+            `;
+        }
 
-            const handleAuth = async (e) => {
-                e.preventDefault();
-                const email = e.target.email.value;
-                const pass = e.target.pass.value;
-                try {
-                    if (authMode === 'signup') await auth.createUserWithEmailAndPassword(email, pass);
-                    else await auth.signInWithEmailAndPassword(email, pass);
-                } catch (err) { alert(err.message); }
-            };
+        function renderNav() {
+            return `
+                <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto border-t border-zinc-900 glass flex justify-around p-3 z-50 rounded-t-3xl shadow-2xl">
+                    <button onclick="setView('feed')" class="p-2 transition-all ${activeView === 'feed' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="shopping-bag"></i></button>
+                    <button onclick="setView('messages')" class="p-2 transition-all ${activeView === 'messages' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="message-circle"></i></button>
+                    <button onclick="setView('profile')" class="p-2 transition-all ${activeView === 'profile' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="user"></i></button>
+                </nav>
+            `;
+        }
 
-            const sendMessage = async (text, receiverId, receiverName) => {
-                if (!text.trim()) return;
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('messages').add({
-                    senderId: user.uid, senderName: myProfile?.name || "User", receiverId, receiverName, text, timestamp: new Date().toISOString()
-                });
-            };
+        function getMediaHTML(url, className) {
+            if (!url) return `<div class="${className} bg-zinc-900 flex items-center justify-center"><i data-lucide="image" class="opacity-10"></i></div>`;
+            const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video');
+            if (isVideo) return `<video src="${url}" class="${className}" muted autoplay loop playsinline></video>`;
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                const id = url.split('v=')[1] || url.split('/').pop();
+                return `<iframe class="${className}" src="https://www.youtube.com/embed/${id.split('&')[0]}" frameborder="0" allowfullscreen></iframe>`;
+            }
+            return `<img src="${url}" class="${className}" onerror="this.src='https://via.placeholder.com/400x500?text=Invalid+Media+URL'">`;
+        }
 
-            const ChatWindow = ({ targetId, targetName, onClose }) => {
-                const [msg, setMsg] = useState("");
-                const chatMsgs = allMessages.filter(m => (m.senderId === user.uid && m.receiverId === targetId) || (m.senderId === targetId && m.receiverId === user.uid)).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-                return (
-                    <div className="fixed inset-0 z-[100] bg-white flex flex-col text-black animate-in">
-                        <header className="p-4 border-b flex items-center justify-between">
-                            <button onClick={onClose} className="p-2"><Icon name="arrow-left"/></button>
-                            <p className="font-bold">@{targetName}</p>
-                            <div className="w-10"></div>
-                        </header>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                            {chatMsgs.map(m => (
-                                <div key={m.id} className={`flex ${m.senderId === user.uid ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`p-3 rounded-2xl max-w-[80%] ${m.senderId === user.uid ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-800'}`}>{m.text}</div>
-                                </div>
-                            ))}
+        function renderFeed() {
+            const filtered = activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory);
+            let html = renderHeader() + `
+                <div class="flex gap-2 p-4 overflow-x-auto no-scrollbar bg-black border-b border-zinc-900 sticky top-16 z-40">
+                    ${['all', 'beauty', 'fashion'].map(cat => `
+                        <button onclick="window.activeCategory='${cat}'; setView('feed')" class="px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${activeCategory === cat ? 'bg-white text-black border-white' : 'border-zinc-800 text-zinc-500'}">
+                            ${cat}
+                        </button>
+                    `).join('')}
+                </div>
+                <main class="flex-1 overflow-y-auto pb-24 no-scrollbar">
+                    <div class="grid grid-cols-2 gap-px bg-zinc-900">
+            `;
+            filtered.forEach(p => {
+                const isLiked = wishlist.has(p.id);
+                html += `
+                    <div class="bg-zinc-950 aspect-3-4 relative group cursor-pointer overflow-hidden">
+                        <div onclick='setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})' class="w-full h-full">
+                            ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}
                         </div>
-                        <div className="p-4 border-t flex gap-2">
-                            <input value={msg} onChange={e => setMsg(e.target.value)} className="flex-1 bg-zinc-100 p-3 rounded-xl outline-none" placeholder="Type a message..." />
-                            <button onClick={() => { sendMessage(msg, targetId, targetName); setMsg(""); }} className="bg-zinc-900 text-white p-3 rounded-xl"><Icon name="send" size={20}/></button>
+                        <button onclick="toggleWishlist('${p.id}')" class="absolute top-2 right-2 p-2 bg-black/50 rounded-full backdrop-blur-md z-10">
+                            <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : 'text-white'}"></i>
+                        </button>
+                        <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent">
+                            <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
+                            <p class="text-indigo-500 font-black text-[10px] mt-0.5">$${p.price}</p>
                         </div>
                     </div>
-                );
-            };
+                `;
+            });
+            html += '</div></main>' + renderNav();
+            appContainer.innerHTML = html;
+            window.activeCategory = activeCategory;
+        }
 
-            if (isLoading) return <div className="h-screen flex items-center justify-center bg-zinc-950 text-emerald-500 font-black italic animate-pulse">TRENDSOCIAL...</div>;
+        function renderProductDetail() {
+            const p = selectedProduct;
+            appContainer.innerHTML = `
+                <div class="h-full flex flex-col bg-black overflow-y-auto no-scrollbar pb-32">
+                    <div class="relative aspect-square">
+                        <button onclick="setView('feed')" class="absolute top-4 left-4 z-10 p-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10"><i data-lucide="arrow-left"></i></button>
+                        ${getMediaHTML(p.mediaUrl, 'w-full h-full object-contain')}
+                    </div>
+                    <div class="p-6 space-y-6 bg-zinc-950 flex-1 rounded-t-3xl -mt-6 border-t border-white/5 shadow-2xl">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-2xl font-black uppercase tracking-tighter">${p.title}</h2>
+                                <span class="inline-block px-2 py-1 bg-zinc-900 rounded text-[9px] font-bold text-zinc-500 uppercase mt-1 tracking-widest">${p.category || 'general'}</span>
+                            </div>
+                            <span class="text-3xl font-black text-indigo-500">$${p.price}</span>
+                        </div>
+                        <p class="text-zinc-400 text-sm leading-relaxed">${p.description}</p>
+                        <div class="grid grid-cols-4 gap-3 pt-4">
+                            <button onclick="setView('chat', '${p.vendorId}')" class="col-span-3 btn-primary py-5 rounded-2xl flex items-center justify-center gap-2">
+                                <i data-lucide="message-circle" class="w-5 h-5"></i> CHAT WITH SELLER
+                            </button>
+                            ${p.whatsapp ? `
+                                <button onclick="window.open('https://wa.me/${p.whatsapp.replace(/\D/g,'')}', '_blank')" class="col-span-1 bg-green-600 rounded-2xl flex items-center justify-center text-white active:scale-90 transition-transform shadow-lg">
+                                    <i data-lucide="phone" class="w-6 h-6"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            ` + renderNav();
+            lucide.createIcons();
+        }
 
-            if (!user) {
-                return (
-                    <div className="h-screen flex flex-col items-center justify-center p-8 bg-zinc-950">
-                        <div className="bg-emerald-500 p-5 rounded-[30px] mb-8 shadow-2xl shadow-emerald-500/20"><Icon name="shopping-bag" size={40}/></div>
-                        <h1 className="text-4xl font-black italic mb-10 tracking-tighter">TrendSocial</h1>
-                        <form onSubmit={handleAuth} className="w-full max-w-xs space-y-4">
-                            <input name="email" type="email" required className="w-full bg-zinc-900 p-5 rounded-[24px] outline-none border border-zinc-800 focus:border-emerald-500 text-white" placeholder="Email" />
-                            <input name="pass" type="password" required className="w-full bg-zinc-900 p-5 rounded-[24px] border border-zinc-800 outline-none focus:border-emerald-500 text-white" placeholder="Password" />
-                            <button className="w-full bg-emerald-500 py-5 rounded-[24px] font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-transform">{authMode === 'login' ? 'Sign In' : 'Create Account'}</button>
-                            <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-zinc-600 text-[10px] font-black uppercase tracking-widest">{authMode === 'login' ? "New here? Sign Up" : "Back to Login"}</button>
+        function renderSellerHub() {
+            appContainer.innerHTML = `
+                <div class="p-6 space-y-8 pb-32 overflow-y-auto flex-1 no-scrollbar">
+                    <div class="flex items-center gap-4">
+                        <button onclick="setView('feed')" class="p-2 bg-zinc-900 rounded-xl"><i data-lucide="arrow-left"></i></button>
+                        <h2 class="text-xl font-black uppercase tracking-tighter">Seller Hub</h2>
+                    </div>
+
+                    <div class="bg-zinc-900/50 p-6 rounded-3xl border border-zinc-900 space-y-6">
+                        <div class="space-y-2">
+                            <p class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">New Inventory Drop</p>
+                            <h3 class="text-lg font-black tracking-tight">Add Product Media</h3>
+                        </div>
+
+                        <div id="media-preview-container" class="aspect-square w-full rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-center overflow-hidden">
+                            <div id="preview-placeholder" class="text-center space-y-2">
+                                <i data-lucide="video" class="mx-auto text-zinc-700" size="32"></i>
+                                <p class="text-[10px] font-bold text-zinc-600 uppercase">Paste a link below to preview</p>
+                            </div>
+                        </div>
+
+                        <form id="productForm" class="space-y-4">
+                            <div class="space-y-1">
+                                <label class="text-[9px] font-bold text-zinc-600 uppercase">Media URL (Video or Image Link)</label>
+                                <input id="mediaUrl" oninput="window.updateHubPreview(this.value)" placeholder="Instagram / YouTube / mp4 / jpg" class="w-full p-4 rounded-2xl text-sm outline-none" required />
+                                <p class="text-[8px] text-zinc-600 mt-1 uppercase">Tip: Use direct links to videos/images to save costs.</p>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="space-y-1">
+                                    <label class="text-[9px] font-bold text-zinc-600 uppercase">Category</label>
+                                    <select id="pCat" class="w-full p-4 rounded-2xl text-sm outline-none">
+                                        <option value="fashion">Fashion</option>
+                                        <option value="beauty">Beauty</option>
+                                    </select>
+                                </div>
+                                <div class="space-y-1">
+                                    <label class="text-[9px] font-bold text-zinc-600 uppercase">Price ($)</label>
+                                    <input id="price" placeholder="0.00" type="number" class="w-full p-4 rounded-2xl text-sm outline-none" required />
+                                </div>
+                            </div>
+
+                            <input id="title" placeholder="Product Title" class="w-full p-4 rounded-2xl text-sm outline-none" required />
+                            <textarea id="desc" placeholder="Product Description..." class="w-full p-4 rounded-2xl text-sm outline-none h-24" required></textarea>
+                            <input id="wa" placeholder="WhatsApp (Optional)" class="w-full p-4 rounded-2xl text-sm outline-none" />
+                            
+                            <button type="submit" class="w-full btn-primary py-4 rounded-2xl mt-4 shadow-xl shadow-white/5">Launch to Marketplace</button>
                         </form>
                     </div>
-                );
-            }
 
-            if (appMode === 'selector') {
-                return (
-                    <div className="h-screen flex flex-col items-center justify-center p-8 text-center bg-zinc-950">
-                        <h1 className="text-4xl font-black italic mb-2 tracking-tighter">TrendSocial</h1>
-                        <p className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.3em] mb-12">Select Workspace</p>
-                        <div className="grid gap-4 w-full max-w-xs">
-                            <button onClick={() => setAppMode('buyer')} className="bg-emerald-500 p-8 rounded-[40px] flex flex-col items-center gap-2 shadow-xl shadow-emerald-500/20 active:scale-95 transition-transform">
-                                <Icon name="shopping-bag" size={32} />
-                                <span className="font-black text-xl">The Shop</span>
-                            </button>
-                            <button onClick={() => setAppMode('seller')} className="bg-indigo-600 p-8 rounded-[40px] flex flex-col items-center gap-2 shadow-xl shadow-indigo-600/20 active:scale-95 transition-transform">
-                                <Icon name="layout-dashboard" size={32} />
-                                <span className="font-black text-xl">The Hub</span>
-                            </button>
-                            <button onClick={() => setAppMode('admin')} className="bg-zinc-800 p-6 rounded-[32px] flex flex-col items-center gap-1 border border-zinc-700 mt-4 text-amber-500 active:scale-95 transition-transform">
-                                <Icon name="shield-alert" size={24} />
-                                <span className="font-black text-[9px] uppercase text-zinc-300">Admin Control</span>
-                            </button>
-                            <button onClick={() => auth.signOut()} className="mt-12 text-zinc-600 font-bold text-[10px] uppercase tracking-widest">Sign Out</button>
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-black uppercase text-zinc-500 tracking-widest">Active Listings</h3>
+                        <div class="space-y-2">
+                        ${products.filter(p => p.vendorId === currentUser.uid).map(p => `
+                            <div class="bg-zinc-900 p-4 rounded-2xl flex items-center justify-between border border-zinc-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 rounded-xl overflow-hidden">${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}</div>
+                                    <div>
+                                        <p class="text-xs font-bold uppercase truncate max-w-[150px]">${p.title}</p>
+                                        <div class="flex items-center gap-1 text-[10px] text-zinc-500 font-bold">
+                                            <i data-lucide="heart" class="w-2.5 h-2.5 fill-rose-500 text-rose-500"></i>
+                                            ${p.wishlistCount || 0} Favorited
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onclick="handleDelete('${p.id}')" class="p-2 text-zinc-700 hover:text-red-500"><i data-lucide="trash-2"></i></button>
+                            </div>
+                        `).join('')}
                         </div>
                     </div>
-                );
-            }
-
-            return (
-                <div className="h-screen flex flex-col bg-white max-w-md mx-auto relative text-black overflow-hidden shadow-2xl">
-                    <header className="p-4 border-b flex justify-between items-center bg-white sticky top-0 z-50">
-                        <button onClick={() => setAppMode('selector')} className="p-2 bg-zinc-50 rounded-full"><Icon name="arrow-left" size={18}/></button>
-                        <h1 className="font-black italic text-lg tracking-tight">{appMode.toUpperCase()}</h1>
-                        <div className="w-8"></div>
-                    </header>
-
-                    <main className="flex-1 overflow-y-auto p-5 pb-24 no-scrollbar bg-slate-50">
-                        {appMode === 'admin' && (
-                            <div className="space-y-4 animate-in">
-                                <h2 className="text-xl font-black">All Sellers ({allSellers.length})</h2>
-                                {allSellers.map(s => (
-                                    <div key={s.id} className="bg-white p-4 rounded-3xl border shadow-sm">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <p className="font-black italic text-indigo-600">@{s.shopName}</p>
-                                            <button onClick={() => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sellers').doc(s.uid).delete()} className="text-red-500"><Icon name="trash-2" size={16}/></button>
-                                        </div>
-                                        <p className="text-[10px] font-bold text-zinc-400">PAN: {s.pan}</p>
-                                        <p className="text-[10px] font-bold text-zinc-400">BANK: {s.acc} / {s.ifsc}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {appMode === 'seller' && !sellerProfile && (
-                            <div className="bg-white p-8 rounded-[40px] border shadow-sm mt-5 animate-in">
-                                <h2 className="text-xl font-black mb-6 text-center">Business Registration</h2>
-                                <form className="space-y-4" onSubmit={async (e) => {
-                                    e.preventDefault();
-                                    const fd = new FormData(e.target);
-                                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sellers').doc(user.uid).set({
-                                        shopName: fd.get('shop'), pan: fd.get('pan'), acc: fd.get('acc'), ifsc: fd.get('ifsc'), uid: user.uid, joinedAt: new Date().toISOString()
-                                    });
-                                }}>
-                                    <input name="shop" required className="w-full bg-slate-50 p-4 rounded-2xl outline-none border focus:border-indigo-300 font-bold" placeholder="Shop Name" />
-                                    <input name="pan" required className="w-full bg-slate-50 p-4 rounded-2xl outline-none uppercase border focus:border-indigo-300 font-bold" placeholder="Indian PAN Card" />
-                                    <input name="acc" required className="w-full bg-slate-50 p-4 rounded-2xl outline-none border focus:border-indigo-300 font-bold" placeholder="Account Number" />
-                                    <input name="ifsc" required className="w-full bg-slate-50 p-4 rounded-2xl outline-none uppercase border focus:border-indigo-300 font-bold" placeholder="IFSC Code" />
-                                    <button className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-xs">Verify & Launch</button>
-                                </form>
-                            </div>
-                        )}
-
-                        {appMode === 'seller' && sellerProfile && (
-                            <div className="mt-5 p-10 bg-zinc-950 text-white rounded-[40px] text-center shadow-2xl animate-in">
-                                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4"><Icon name="store" size={32} className="text-indigo-400"/></div>
-                                <h2 className="text-2xl font-black italic leading-tight mb-1">@{sellerProfile.shopName}</h2>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-10">Verified Seller Hub</p>
-                                <button className="w-full bg-white text-black py-4 rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-transform">New Inventory Drop</button>
-                            </div>
-                        )}
-
-                        {appMode === 'buyer' && (
-                             <div className="space-y-4 animate-in">
-                                <div className="p-10 bg-emerald-50 rounded-[40px] text-center border border-emerald-100">
-                                    <Icon name="shopping-bag" size={40} className="mx-auto mb-4 text-emerald-600"/>
-                                    <h2 className="text-xl font-black uppercase text-emerald-900 tracking-tight">The Marketplace</h2>
-                                    <p className="text-[10px] font-bold uppercase opacity-60">Auth Secured</p>
-                                </div>
-                                <div className="p-12 bg-white rounded-[40px] border border-dashed border-zinc-200 text-center">
-                                    <p className="text-xs text-zinc-300 font-black uppercase tracking-[0.2em] italic">Waiting for fresh drops...</p>
-                                </div>
-                             </div>
-                        )}
-                    </main>
-
-                    <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto h-20 bg-white border-t flex items-center justify-around z-40">
-                        <button onClick={() => setActiveTab('feed')} className={`p-3 ${activeTab === 'feed' ? 'text-zinc-900' : 'text-zinc-300'}`}><Icon name="package" size={24}/></button>
-                        <button onClick={() => setActiveTab('chats')} className={`p-3 ${activeTab === 'chats' ? 'text-zinc-900' : 'text-zinc-300'}`}><Icon name="message-square" size={24}/></button>
-                        <button onClick={() => setActiveTab('profile')} className={`p-3 ${activeTab === 'profile' ? 'text-zinc-900' : 'text-zinc-300'}`}><Icon name="user" size={24}/></button>
-                    </nav>
                 </div>
-            );
+            ` + renderNav();
+            lucide.createIcons();
+
+            window.updateHubPreview = (url) => {
+                const container = document.getElementById('media-preview-container');
+                if (!url.trim()) {
+                    container.innerHTML = `<div class="text-center space-y-2"><i data-lucide="video" class="mx-auto text-zinc-700" size="32"></i><p class="text-[10px] font-bold text-zinc-600 uppercase">Paste a link below to preview</p></div>`;
+                } else {
+                    container.innerHTML = getMediaHTML(url, 'w-full h-full object-contain');
+                }
+                lucide.createIcons();
+            };
+
+            document.getElementById('productForm')?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const btn = e.target.querySelector('button');
+                btn.disabled = true; btn.innerText = 'Syncing...';
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), {
+                        title: document.getElementById('title').value,
+                        price: document.getElementById('price').value,
+                        description: document.getElementById('desc').value,
+                        category: document.getElementById('pCat').value,
+                        whatsapp: document.getElementById('wa').value,
+                        mediaUrl: document.getElementById('mediaUrl').value,
+                        vendorId: currentUser.uid,
+                        wishlistCount: 0,
+                        createdAt: serverTimestamp()
+                    });
+                    setView('feed');
+                } catch (err) { alert(err.message); btn.disabled = false; btn.innerText = 'Retry Launch'; }
+            });
+        }
+
+        function renderAuth() {
+            appContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full p-8 space-y-8 bg-black">
+                    <div class="text-center">
+                        <h1 class="text-4xl font-black italic tracking-tighter uppercase italic">Trend<span class="text-indigo-500 font-black">Social</span></h1>
+                        <p class="text-[9px] font-black uppercase text-zinc-600 tracking-[0.4em] mt-2">Member Authentication</p>
+                    </div>
+                    <div class="w-full flex bg-zinc-900 rounded-3xl p-1">
+                        <button onclick="window.authModeSwitch('email')" class="flex-1 py-3 text-[10px] font-black uppercase rounded-2xl transition-all ${currentAuthMode !== 'phone' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-600'}">Magic Link</button>
+                        <button onclick="window.authModeSwitch('phone')" class="flex-1 py-3 text-[10px] font-black uppercase rounded-2xl transition-all ${currentAuthMode === 'phone' ? 'bg-zinc-800 text-white shadow-xl' : 'text-zinc-600'}">SMS Code</button>
+                    </div>
+                    <form id="authForm" class="w-full space-y-4">
+                        ${currentAuthMode === 'phone' ? `
+                            <div id="phoneInputArea" class="space-y-4">
+                                <input id="phoneNum" type="tel" placeholder="+1 234 567 890" class="w-full p-4 rounded-2xl outline-none" required />
+                                <button type="submit" class="w-full btn-primary py-5 rounded-2xl">Send Access Code</button>
+                            </div>
+                            <div id="otpInputArea" class="hidden space-y-4 animate-in">
+                                <input id="otpCode" type="text" placeholder="6-digit code" class="w-full p-4 rounded-2xl text-center text-xl font-black outline-none tracking-widest" />
+                                <button type="button" onclick="handleVerifyOTP()" class="w-full btn-primary py-5 rounded-2xl">Confirm & Sign In</button>
+                            </div>
+                        ` : `
+                            <input id="email" type="email" placeholder="Enter Email" class="w-full p-4 rounded-2xl outline-none" required />
+                            <button type="submit" class="w-full btn-primary py-5 rounded-2xl">Get Login Link</button>
+                        `}
+                    </form>
+                    <button onclick="setView('feed')" class="text-zinc-700 text-[10px] font-black uppercase tracking-widest">Continue as Guest</button>
+                </div>
+            `;
+            window.authModeSwitch = (mode) => { currentAuthMode = mode; renderAuth(); };
+            if (currentAuthMode === 'phone') {
+                if (!window.recaptchaVerifier) window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', { 'size': 'invisible' });
+                document.getElementById('authForm').addEventListener('submit', handlePhoneSubmit);
+            } else {
+                document.getElementById('authForm').addEventListener('submit', handleEmailLinkSend);
+            }
+        }
+
+        async function handleEmailLinkSend(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const actionCodeSettings = { url: window.location.href.split('?')[0], handleCodeInApp: true };
+            try {
+                await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+                window.localStorage.setItem('emailForSignIn', email);
+                alert("Magic link sent! Please check your inbox.");
+            } catch (err) { alert(err.message); }
+        }
+
+        async function handlePhoneSubmit(e) {
+            e.preventDefault();
+            const phone = document.getElementById('phoneNum').value;
+            try {
+                confirmationResult = await signInWithPhoneNumber(auth, phone, window.recaptchaVerifier);
+                document.getElementById('phoneInputArea').classList.add('hidden');
+                document.getElementById('otpInputArea').classList.remove('hidden');
+            } catch (err) { alert("SMS failed: " + err.message); }
+        }
+
+        window.handleVerifyOTP = async () => {
+            const code = document.getElementById('otpCode').value;
+            try { await confirmationResult.confirm(code); setView('feed'); } catch (err) { alert("Code invalid."); }
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        function renderHelp() {
+            appContainer.innerHTML = renderHeader() + `
+                <main class="flex-1 p-8 text-center space-y-8 flex flex-col justify-center animate-in">
+                    <div class="w-20 h-20 bg-green-500/10 text-green-500 rounded-3xl flex items-center justify-center mx-auto shadow-2xl shadow-green-500/10"><i data-lucide="help-circle" class="w-10 h-10"></i></div>
+                    <div class="space-y-2">
+                        <h2 class="text-2xl font-black uppercase italic tracking-tighter">Concierge Service</h2>
+                        <p class="text-zinc-500 text-sm">Facing issues or need custom assistance? Direct chat with our team on WhatsApp.</p>
+                    </div>
+                    <button onclick="window.open('https://wa.me/${HELP_WHATSAPP.replace(/\D/g,'')}', '_blank')" class="w-full bg-green-600 py-6 rounded-3xl font-black uppercase flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-green-600/20">
+                        <i data-lucide="phone"></i> WHATSAPP SUPPORT
+                    </button>
+                    <p class="text-[9px] font-black text-zinc-700 uppercase tracking-widest pt-4">Internal ID: ${appId}</p>
+                </main>
+            ` + renderNav();
+            lucide.createIcons();
+        }
+
+        function renderWishlistView() {
+            const likedProds = products.filter(p => wishlist.has(p.id));
+            appContainer.innerHTML = renderHeader() + `
+                <main class="flex-1 overflow-y-auto pb-32 p-4 no-scrollbar animate-in">
+                    <h2 class="text-2xl font-black uppercase italic mb-6">Favorites</h2>
+                    ${likedProds.length === 0 ? `<div class="py-20 text-center text-zinc-800"><i data-lucide="heart" class="mx-auto opacity-10 mb-4" size="64"></i><p class="font-black uppercase text-[10px] tracking-widest">Wishlist is Empty</p></div>` : `
+                        <div class="grid grid-cols-2 gap-4">
+                            ${likedProds.map(p => `<div onclick='setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})' class="bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-800"><div class="aspect-square">${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}</div><div class="p-4"><p class="font-bold text-[10px] uppercase truncate">${p.title}</p><p class="text-indigo-500 font-black text-[10px] mt-1">$${p.price}</p></div></div>`).join('')}
+                        </div>
+                    `}
+                </main>
+            ` + renderNav();
+            lucide.createIcons();
+        }
+
+        function renderInbox() {
+            appContainer.innerHTML = renderHeader() + `
+                <main class="flex-1 p-4 space-y-4 pb-32 overflow-y-auto no-scrollbar animate-in">
+                    <h2 class="text-2xl font-black uppercase italic">Messages</h2>
+                    <div id="inboxList" class="space-y-3"></div>
+                </main>
+            ` + renderNav();
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'active_chats'), (snapshot) => {
+                const chats = snapshot.docs.map(d => d.data()).filter(c => c.participants.includes(currentUser.uid));
+                const list = document.getElementById('inboxList');
+                if (!list) return;
+                list.innerHTML = chats.length ? chats.map(c => {
+                    const other = c.participants.find(p => p !== currentUser.uid);
+                    return `<div onclick="setView('chat', '${other}')" class="p-5 bg-zinc-900 rounded-3xl border border-zinc-800 flex items-center gap-4 cursor-pointer active:scale-95 transition-all"><div class="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center font-black text-indigo-400">U</div><div class="flex-1 overflow-hidden"><p class="text-xs font-black uppercase tracking-tight">Support Chat ${other.slice(0,5)}</p><p class="text-[11px] text-zinc-500 truncate mt-0.5">${c.lastMsg}</p></div></div>`;
+                }).join('') : `<div class="py-20 text-center text-zinc-800"><i data-lucide="message-circle" class="mx-auto opacity-10 mb-4" size="64"></i><p class="font-black uppercase text-[10px] tracking-widest">No active chats</p></div>`;
+                lucide.createIcons();
+            });
+        }
+
+        function renderChat() {
+            const rid = activeChatRecipient;
+            const cid = [currentUser.uid, rid].sort().join('_');
+            appContainer.innerHTML = `
+                <div class="flex flex-col h-full bg-black">
+                    <div class="p-5 border-b border-zinc-900 flex items-center gap-3 glass z-20"><button onclick="setView('messages')"><i data-lucide="arrow-left"></i></button><span class="font-black text-[10px] uppercase tracking-widest text-zinc-400">Private Conversation</span></div>
+                    <div id="chatMsgs" class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar"></div>
+                    <form id="chatForm" class="p-4 bg-zinc-950 border-t border-zinc-900 flex gap-2 z-20 shadow-2xl"><input id="mText" placeholder="Type message..." class="flex-1 p-4 rounded-2xl text-sm outline-none" /><button class="p-4 bg-white text-black rounded-2xl shadow-lg active:scale-90 transition-transform"><i data-lucide="send" size="18"></i></button></form>
+                </div>
+            `;
+            lucide.createIcons();
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'chats', cid, 'messages'), (snapshot) => {
+                const msgs = snapshot.docs.map(d => d.data()).sort((a,b) => a.timestamp?.seconds - b.timestamp?.seconds);
+                const msgBox = document.getElementById('chatMsgs');
+                if (!msgBox) return;
+                msgBox.innerHTML = msgs.map(m => `<div class="flex ${m.sender === currentUser.uid ? 'justify-end' : 'justify-start'}"><div class="max-w-[85%] p-4 rounded-3xl text-xs ${m.sender === currentUser.uid ? 'bg-indigo-600 text-white rounded-br-none shadow-lg' : 'bg-zinc-800 text-zinc-100 rounded-bl-none'}">${m.text}</div></div>`).join('');
+                msgBox.scrollTop = msgBox.scrollHeight;
+            });
+            document.getElementById('chatForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const txt = document.getElementById('mText').value;
+                if (!txt.trim()) return;
+                document.getElementById('mText').value = '';
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'chats', cid, 'messages'), { sender: currentUser.uid, text: txt, timestamp: serverTimestamp() });
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'active_chats', cid), { participants: [currentUser.uid, rid], lastMsg: txt, lastUpdate: serverTimestamp() }, { merge: true });
+            });
+        }
+
+        function renderProfile() {
+            appContainer.innerHTML = `
+                <div class="p-8 text-center flex-1 flex flex-col justify-center space-y-12 animate-in">
+                    <div class="space-y-6">
+                        <div class="w-24 h-24 bg-zinc-900 rounded-[40px] border-4 border-zinc-800 flex items-center justify-center text-4xl font-black mx-auto shadow-2xl">
+                            ${currentUser.email?.[0]?.toUpperCase() || currentUser.phoneNumber?.slice(-2) || 'G'}
+                        </div>
+                        <h2 class="text-2xl font-black uppercase tracking-tighter">${currentUser.email || currentUser.phoneNumber || 'Guest Account'}</h2>
+                        <p class="text-[9px] font-black uppercase text-indigo-500 tracking-[0.3em]">${isAdmin ? 'Master Administrator' : 'Verified Member'}</p>
+                    </div>
+                    <div class="space-y-3">
+                        <!-- DEV/PREVIEW HELP: Show Seller Hub button even for guests to allow viewing UI -->
+                        ${currentUser.isAnonymous ? `<button onclick="setView('admin')" class="w-full p-5 bg-zinc-800 border border-zinc-700 rounded-3xl font-black uppercase text-amber-500 text-xs tracking-widest animate-pulse">Preview Seller Hub (Testing)</button>` : ''}
+                        
+                        ${isAdmin ? `<button onclick="setView('admin')" class="w-full btn-primary py-5 rounded-3xl shadow-xl">Enter Seller Hub</button>` : ''}
+                        
+                        <button onclick="setView('help')" class="w-full p-5 bg-zinc-900 border border-zinc-800 rounded-3xl font-black uppercase text-zinc-400 text-xs tracking-widest active:scale-95 transition-all">Help & Support</button>
+                        
+                        ${currentUser.isAnonymous ? `<button onclick="setView('auth')" class="w-full p-5 btn-primary rounded-3xl shadow-xl">Sign In (Claim Admin)</button>` : `<button onclick="signOut(auth)" class="w-full p-5 bg-zinc-950 rounded-3xl font-black uppercase text-red-500 text-xs border border-red-500/20 active:scale-95 transition-all">Log Out</button>`}
+                    </div>
+                </div>
+            ` + renderNav();
+            lucide.createIcons();
+        }
+
+        window.handleDelete = async (id) => { if (confirm("Remove listing?")) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id)); };
+
+        initAuth();
     </script>
 </body>
 </html>
