@@ -3,28 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>TrendSocial Pro</title>
+    <title>TrendSocial Pro | itsdeepyg@gmail.com</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #f4f4f5; margin: 0; }
+        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #f4f4f5; margin: 0; overflow-x: hidden; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .aspect-3-4 { aspect-ratio: 3 / 4; }
-        .glass { background: rgba(10, 10, 10, 0.8); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .glass { background: rgba(10, 10, 10, 0.85); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.08); }
         .btn-primary { background: white; color: black; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; border-radius: 1rem; }
         .btn-primary:active { transform: scale(0.95); }
-        .card { background: #111; border: 1px solid #222; border-radius: 1.5rem; padding: 1.5rem; }
-        input, select, textarea { background: #18181b !important; border: 1px solid #27272a !important; color: white !important; border-radius: 0.75rem; width: 100%; padding: 1rem; font-size: 14px; }
-        input:focus { border-color: #6366f1 !important; outline: none; }
+        .card { background: #111; border: 1px solid #222; border-radius: 1.5rem; padding: 1.5rem; transition: all 0.2s; }
+        .card:active { transform: scale(0.98); background: #18181b; }
+        input, select, textarea { background: #18181b !important; border: 1px solid #27272a !important; color: white !important; border-radius: 0.75rem; width: 100%; padding: 1rem; font-size: 14px; outline: none !important; }
+        input:focus { border-color: #6366f1 !important; }
         .badge { font-size: 9px; font-weight: 900; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
         .badge-admin { background: #f59e0b; color: #000; }
         .badge-reseller { background: #6366f1; color: #fff; }
+        .badge-buyer { background: #27272a; color: #a1a1aa; }
         .avatar { width: 44px; height: 44px; border-radius: 14px; object-fit: cover; background: #27272a; border: 1px solid rgba(255,255,255,0.1); }
-        .stat-card { background: #18181b; padding: 1rem; border-radius: 1rem; border: 1px solid #27272a; }
-        .search-tag { background: #18181b; border: 1px solid #27272a; padding: 4px 12px; border-radius: 8px; font-size: 10px; font-weight: 700; color: #a1a1aa; white-space: nowrap; }
     </style>
 </head>
 <body class="bg-black">
@@ -35,13 +35,10 @@
         </div>
     </div>
 
-    <div id="recaptcha-container"></div>
-
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { 
             getAuth, onAuthStateChanged, signOut, signInAnonymously, 
-            RecaptchaVerifier, signInWithPhoneNumber, 
             sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink 
         } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
         import { 
@@ -49,9 +46,6 @@
             addDoc, onSnapshot, query, serverTimestamp, deleteDoc, updateDoc, increment 
         } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
-        // ==========================================
-        // FIREBASE CONFIGURATION (LIVE)
-        // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyCP7HsmoQyMeenWxhTAcgBoRs-6ErtzhJs",
             authDomain: "trend-social-88546.firebaseapp.com",
@@ -61,14 +55,14 @@
             appId: "1:859903608854:web:82b46edf364994f7cbcd37"
         };
 
-        const appId = 'trend-social-v12-production'; 
+        const appId = 'trend-social-v17-admin-master'; 
+        const HELP_EMAIL = "itsdeepyg@gmail.com";
         const HELP_WHATSAPP = "+910000000000"; 
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // --- State Management ---
         let currentUser = null;
         let userProfile = { role: 'buyer', currency: 'USD', photo: '' };
         let isAdmin = false;
@@ -84,25 +78,70 @@
 
         const rates = { USD: 1, INR: 83, EUR: 0.92 };
         const symbols = { USD: '$', INR: '₹', EUR: '€' };
-        
-        const LUX_CATEGORIES = [
-            { id: 'all', label: 'All' },
-            { id: 'beauty', label: 'Beauty' },
-            { id: 'high-end', label: 'High-end Luxury' },
-            { id: 'affordable', label: 'Affordable Luxury' }
-        ];
 
         const appContainer = document.getElementById('app');
 
-        // --- Auth & Initialization ---
+        // --- GLOBAL WINDOW ATTACHMENTS ---
+        window.setView = (view, params = null) => {
+            activeView = view;
+            if (params) {
+                if (view === 'product') selectedProduct = params;
+                if (view === 'chat') activeChatRecipient = params;
+            }
+            render();
+        };
+
+        window.handleSearch = (v) => {
+            searchQuery = v;
+            render();
+        };
+
+        window.toggleWishlist = async (productId) => {
+            if (currentUser.isAnonymous) { window.setView('auth'); return; }
+            const wishRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'wishlist', productId);
+            const prodRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', productId);
+            if (wishlist.has(productId)) {
+                await deleteDoc(wishRef);
+                await updateDoc(prodRef, { wishlistCount: increment(-1) });
+            } else {
+                await setDoc(wishRef, { addedAt: serverTimestamp() });
+                await updateDoc(prodRef, { wishlistCount: increment(1) });
+            }
+        };
+
+        window.handleDelete = async (id) => {
+            if (confirm("Delete this product permanently?")) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
+            }
+        };
+
+        window.updateProfile = async (d) => {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', currentUser.uid), d);
+            userProfile = {...userProfile, ...d};
+            render();
+        };
+
+        window.verifyUser = async (uid, role) => {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', uid), { role });
+            alert("Verification Success: User is now " + role);
+        };
+
+        window.logout = async () => {
+            await signOut(auth);
+            window.location.reload();
+        };
+
+        // --- AUTH SYSTEM ---
         const handleEmailLinkSignIn = async () => {
             if (isSignInWithEmailLink(auth, window.location.href)) {
                 let email = window.localStorage.getItem('emailForSignIn');
-                if (!email) email = window.prompt('Please confirm your email:');
+                if (!email) email = window.prompt('Confirm your email for login:');
+                if (!email) return;
                 try {
                     await signInWithEmailLink(auth, email, window.location.href);
                     window.localStorage.removeItem('emailForSignIn');
-                } catch (error) { console.error(error); }
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } catch (error) { alert("Magic link error: " + error.message); }
             }
         };
 
@@ -116,9 +155,12 @@
                     if (profileSnap.exists()) {
                         userProfile = profileSnap.data();
                     } else {
-                        userProfile = { uid: user.uid, role: 'buyer', currency: 'USD', photo: '', joinedAt: new Date().toISOString() };
+                        const target = window.localStorage.getItem('targetRole') || 'buyer';
+                        userProfile = { uid: user.uid, role: target, currency: 'USD', photo: '', joinedAt: new Date().toISOString() };
                         await setDoc(profileRef, userProfile);
                     }
+
+                    // MASTER ADMIN AUTO-CLAIM
                     const adminRef = doc(db, 'artifacts', appId, 'public', 'data', 'adminConfig', 'settings');
                     const adminSnap = await getDoc(adminRef);
                     if (!adminSnap.exists()) {
@@ -127,14 +169,12 @@
                     } else {
                         isAdmin = adminSnap.data().ownerId === user.uid;
                     }
-                    isReseller = userProfile.role === 'reseller';
-                    if (!listenersInitialized) {
-                        initListeners();
-                        listenersInitialized = true;
-                    }
+                    if (isAdmin) userProfile.role = 'admin';
+                    isReseller = userProfile.role === 'reseller' || isAdmin; 
+
+                    if (!listenersInitialized) { initListeners(); listenersInitialized = true; }
                 } else {
-                    isAdmin = false;
-                    isReseller = false;
+                    isAdmin = false; isReseller = false;
                     if (!user) signInAnonymously(auth);
                 }
                 render();
@@ -154,39 +194,7 @@
             }
         };
 
-        const formatPrice = (priceUSD) => {
-            const converted = priceUSD * rates[userProfile.currency || 'USD'];
-            return `${symbols[userProfile.currency || 'USD']}${converted.toLocaleString(undefined, {minimumFractionDigits: userProfile.currency === 'USD' ? 2 : 0})}`;
-        };
-
-        window.handleSearch = (val) => {
-            searchQuery = val.toLowerCase();
-            render();
-        };
-
-        window.setView = (view, params = null) => {
-            activeView = view;
-            if (params) {
-                if (view === 'product') selectedProduct = params;
-                if (view === 'chat') activeChatRecipient = params;
-            }
-            render();
-        };
-
-        window.toggleWishlist = async (productId) => {
-            if (!currentUser || currentUser.isAnonymous) { setView('auth'); return; }
-            const wishRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'wishlist', productId);
-            const prodRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', productId);
-            if (wishlist.has(productId)) {
-                await deleteDoc(wishRef);
-                await updateDoc(prodRef, { wishlistCount: increment(-1) });
-            } else {
-                await setDoc(wishRef, { addedAt: serverTimestamp() });
-                await updateDoc(prodRef, { wishlistCount: increment(1) });
-            }
-        };
-
-        // --- Render UI ---
+        // --- RENDER ENGINE ---
         function render() {
             if (!currentUser) return;
             switch (activeView) {
@@ -195,13 +203,11 @@
                 case 'admin': renderAdminDashboard(); break;
                 case 'reseller_hub': renderResellerDashboard(); break;
                 case 'reseller_reg': renderResellerRegistration(); break;
-                case 'shipping': renderShippingHub(); break;
                 case 'messages': renderInbox(); break;
                 case 'chat': renderChat(); break;
-                case 'profile': renderBuyerDashboard(); break;
+                case 'profile': renderProfile(); break;
+                case 'auth': renderGateway(); break;
                 case 'help': renderHelp(); break;
-                case 'wishlist': renderWishlistView(); break;
-                case 'auth': renderAuth(); break;
                 default: renderFeed();
             }
             lucide.createIcons();
@@ -210,26 +216,17 @@
         function renderHeader() {
             const photoUrl = userProfile.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`;
             return `
-                <header class="glass sticky top-0 z-50">
-                    <div class="p-4 flex justify-between items-center">
-                        <div class="flex items-center gap-3" onclick="setView('profile')">
-                            <img src="${photoUrl}" class="avatar" />
-                            <div class="flex flex-col">
-                                <h1 class="text-sm font-black tracking-tighter italic uppercase">Trend<span class="text-indigo-500">Social</span></h1>
-                                <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest">${userProfile.currency || 'USD'}</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-1">
-                            <button onclick="setView('wishlist')" class="p-2 hover:bg-zinc-800 rounded-full text-rose-500"><i data-lucide="heart" size="20"></i></button>
-                            ${isAdmin ? `<button onclick="setView('admin')" class="p-2 hover:bg-zinc-800 rounded-full text-amber-500"><i data-lucide="shield-check" size="20"></i></button>` : ''}
-                            ${isReseller ? `<button onclick="setView('reseller_hub')" class="p-2 hover:bg-zinc-800 rounded-full text-indigo-500"><i data-lucide="layout-dashboard" size="20"></i></button>` : ''}
+                <header class="p-4 flex justify-between items-center glass sticky top-0 z-50">
+                    <div class="flex items-center gap-3" onclick="window.setView('profile')">
+                        <img src="${photoUrl}" class="avatar" />
+                        <div class="flex flex-col">
+                            <h1 class="text-sm font-black tracking-tighter italic uppercase">Trend<span class="text-indigo-500">Social</span></h1>
+                            <p class="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">${userProfile.role} Account</p>
                         </div>
                     </div>
-                    <div class="px-4 pb-4">
-                        <div class="relative group">
-                            <input id="globalSearch" type="text" placeholder="Search Paithani, Sarees, Men, Women..." value="${searchQuery}" oninput="window.handleSearch(this.value)" class="pl-10 pr-4 py-3 bg-zinc-900 border-zinc-800 rounded-xl text-xs w-full focus:ring-1 focus:ring-indigo-500 transition-all" />
-                            <i data-lucide="search" class="absolute left-3 top-3.5 text-zinc-600 w-4 h-4"></i>
-                        </div>
+                    <div class="flex gap-1">
+                        ${isAdmin ? `<button onclick="window.setView('admin')" class="p-2 hover:bg-zinc-800 rounded-full text-amber-500"><i data-lucide="shield-check"></i></button>` : ''}
+                        ${isReseller ? `<button onclick="window.setView('reseller_hub')" class="p-2 hover:bg-zinc-800 rounded-full text-indigo-500"><i data-lucide="plus-circle"></i></button>` : ''}
                     </div>
                 </header>
             `;
@@ -238,163 +235,356 @@
         function renderNav() {
             return `
                 <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto border-t border-zinc-900 glass flex justify-around p-4 z-50 rounded-t-3xl shadow-2xl">
-                    <button onclick="setView('feed')" class="${activeView === 'feed' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="shopping-bag"></i></button>
-                    <button onclick="setView('messages')" class="${activeView === 'messages' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="message-circle"></i></button>
-                    <button onclick="setView('profile')" class="${activeView === 'profile' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="user"></i></button>
+                    <button onclick="window.setView('feed')" class="${activeView === 'feed' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="shopping-bag"></i></button>
+                    <button onclick="window.setView('messages')" class="${activeView === 'messages' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="message-circle"></i></button>
+                    <button onclick="window.setView('profile')" class="${activeView === 'profile' ? 'text-indigo-500 scale-125' : 'text-zinc-500'}"><i data-lucide="user"></i></button>
                 </nav>
             `;
         }
 
         function renderFeed() {
             let filtered = activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory);
-            if (searchQuery) {
-                filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery) || p.description.toLowerCase().includes(searchQuery));
-            }
+            if (searchQuery) filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase()));
 
-            let html = renderHeader() + `
-                <div class="flex gap-2 px-4 py-4 overflow-x-auto no-scrollbar bg-black border-b border-zinc-900">
-                    ${LUX_CATEGORIES.map(cat => `
-                        <button onclick="window.activeCategory='${cat.id}'; render()" class="px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${activeCategory === cat.id ? 'bg-white text-black border-white shadow-lg' : 'border-zinc-800 text-zinc-500'}">${cat.label}</button>
-                    `).join('')}
+            appContainer.innerHTML = renderHeader() + `
+                <div class="p-4 border-b border-zinc-900 bg-black sticky top-[73px] z-40 space-y-4">
+                    <div class="relative">
+                        <input type="text" placeholder="Search Paithani, Luxury, Sarees..." oninput="window.handleSearch(this.value)" class="pl-10 text-xs py-3" value="${searchQuery}" />
+                        <i data-lucide="search" class="absolute left-3 top-3.5 text-zinc-600" size="16"></i>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto no-scrollbar">
+                        ${['all', 'beauty', 'high-end', 'affordable'].map(cat => `
+                            <button onclick="window.activeCategory='${cat}'; window.render()" class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border ${activeCategory === cat ? 'bg-white text-black border-white' : 'border-zinc-800 text-zinc-500'}">
+                                ${cat.replace('-',' ')}
+                            </button>
+                        `).join('')}
+                    </div>
                 </div>
                 <main class="flex-1 overflow-y-auto pb-24 no-scrollbar">
                     <div class="grid grid-cols-2 gap-px bg-zinc-900">
-            `;
-            filtered.forEach(p => {
-                const isLiked = wishlist.has(p.id);
-                html += `
-                    <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden border-b border-zinc-900" onclick='setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
-                        ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}
-                        <button onclick="event.stopPropagation(); toggleWishlist('${p.id}')" class="absolute top-3 right-3 p-2 bg-black/40 backdrop-blur-md rounded-full z-10"><i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : 'text-white'}"></i></button>
-                        <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent">
-                            <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
-                            <p class="text-indigo-500 font-black text-[10px] mt-0.5">${formatPrice(p.price)}</p>
-                        </div>
+                        ${filtered.map(p => `
+                            <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden" onclick='window.setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
+                                ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}
+                                <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/30 to-transparent">
+                                    <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
+                                    <p class="text-indigo-500 font-black text-[10px] mt-0.5">${formatPrice(p.price)}</p>
+                                </div>
+                            </div>
+                        `).join('')}
                     </div>
-                `;
-            });
-            html += '</div></main>' + renderNav();
-            appContainer.innerHTML = html;
+                    ${filtered.length === 0 ? '<p class="py-20 text-center text-zinc-800 uppercase font-black text-[10px] italic">No Products Found</p>' : ''}
+                </main>
+            ` + renderNav();
+            window.activeCategory = activeCategory;
+            window.render = render;
         }
 
+        // --- ADMIN DASHBOARD ---
         function renderAdminDashboard() {
             appContainer.innerHTML = renderHeader() + `
                 <div class="p-6 space-y-8 flex-1 overflow-y-auto no-scrollbar pb-32">
-                    <h2 class="text-xl font-black uppercase text-amber-500">Admin Control</h2>
-                    <div id="requestList" class="space-y-3"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-amber-500/10 text-amber-500 rounded-xl"><i data-lucide="shield-check"></i></div>
+                        <h2 class="text-xl font-black uppercase text-amber-500 italic">Master Control Panel</h2>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <div onclick="window.setView('reseller_hub')" class="card bg-indigo-600/10 border-indigo-600/20 flex items-center justify-between shadow-2xl shadow-indigo-600/5">
+                            <div>
+                                <h3 class="font-black text-xs uppercase text-indigo-400">Sell as Admin</h3>
+                                <p class="text-[9px] text-zinc-500 mt-1 uppercase font-bold">List products directly to feed</p>
+                            </div>
+                            <i data-lucide="plus" class="text-indigo-400"></i>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <h3 class="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Reseller Verification Pool</h3>
+                            <div id="reqList" class="space-y-3"></div>
+                        </div>
+                    </div>
                 </div>
             ` + renderNav();
-            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'), (snapshot) => {
-                const list = document.getElementById('requestList');
+
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'), (snap) => {
+                const list = document.getElementById('reqList');
                 if (!list) return;
-                const pending = snapshot.docs.map(d => ({id: d.id, ...d.data()})).filter(p => p.role === 'reseller_pending');
+                const pending = snap.docs.map(d => ({id: d.id, ...d.data()})).filter(p => p.role === 'reseller_pending');
                 list.innerHTML = pending.length ? pending.map(r => `
-                    <div class="card space-y-4">
-                        <p class="font-black text-sm uppercase">${r.shopName}</p>
-                        <p class="text-[9px] text-zinc-500">PAN: ${r.pan} | BANK: ${r.acc}</p>
-                        <div class="flex gap-2">
-                            <button onclick="handleVerifyUser('${r.id}', 'reseller')" class="flex-1 bg-green-600 py-3 rounded-xl font-black text-[9px] uppercase">Approve</button>
-                            <button onclick="handleVerifyUser('${r.id}', 'buyer')" class="flex-1 bg-red-600/10 text-red-500 py-3 rounded-xl font-black text-[9px] uppercase">Reject</button>
+                    <div class="card space-y-4 border-l-4 border-amber-500">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-black text-sm uppercase">${r.shopName || 'New Shop'}</p>
+                                <p class="text-[9px] text-zinc-500 font-bold">PAN: ${r.pan || 'N/A'} | IFSC: ${r.ifsc || 'N/A'}</p>
+                            </div>
                         </div>
-                    </div>`).join('') : `<p class="py-10 text-center text-zinc-800 text-xs">No pending requests</p>`;
+                        <div class="flex gap-2">
+                            <button onclick="window.verifyUser('${r.id}', 'reseller')" class="flex-1 bg-green-600 py-3 rounded-xl font-black text-[9px] uppercase">Verify</button>
+                            <button onclick="window.verifyUser('${r.id}', 'buyer')" class="flex-1 bg-red-600/10 text-red-500 py-3 rounded-xl font-black text-[9px] uppercase">Deny</button>
+                        </div>
+                    </div>`).join('') : `<p class="py-10 text-center text-zinc-800 text-[10px] font-black uppercase">All applications reviewed</p>`;
             });
         }
 
-        window.handleVerifyUser = async (uid, role) => {
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', uid), { role });
-            alert(`Member updated to ${role}`);
-        };
-
         function renderResellerDashboard() {
             appContainer.innerHTML = renderHeader() + `
-                <div class="p-6 space-y-8 flex-1 overflow-y-auto no-scrollbar pb-32">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-xl font-black uppercase italic tracking-tighter">Reseller Hub</h2>
-                        <button onclick="setView('shipping')" class="bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">Logistics Hub</button>
+                <div class="p-6 space-y-8 flex-1 overflow-y-auto pb-32">
+                    <div class="flex items-center gap-3">
+                        <button onclick="window.setView('feed')" class="p-2 bg-zinc-900 rounded-xl"><i data-lucide="arrow-left"></i></button>
+                        <h2 class="text-xl font-black uppercase italic tracking-tighter">Catalogue Hub</h2>
                     </div>
-                    <form id="productForm" class="card space-y-4">
-                        <input id="mediaUrl" placeholder="Media URL (Instagram/Image)" required />
-                        <select id="pCat">
-                            <option value="beauty">Beauty</option>
-                            <option value="high-end">High-end Luxury</option>
-                            <option value="affordable">Affordable Luxury</option>
-                        </select>
-                        <input id="price" type="number" placeholder="Price (USD)" required />
-                        <input id="title" placeholder="Item Name (e.g. Silk Saree)" required />
-                        <textarea id="desc" placeholder="Details (Add tags like #women #men)..." required></textarea>
-                        <button type="submit" class="w-full btn-primary py-4 rounded-2xl">Publish Listing</button>
+                    <form id="pForm" class="card space-y-4 bg-zinc-900 shadow-2xl">
+                        <div class="space-y-4">
+                            <input id="mediaUrl" placeholder="Direct Media URL (Instagram/YouTube/Drive)" required />
+                            <div class="grid grid-cols-2 gap-2">
+                                <select id="pCat">
+                                    <option value="high-end">High-end Luxury</option>
+                                    <option value="affordable">Affordable Luxury</option>
+                                    <option value="beauty">Beauty</option>
+                                </select>
+                                <input id="price" type="number" placeholder="Price (USD)" required />
+                            </div>
+                            <input id="title" placeholder="Item Name (e.g. Traditional Silk Saree)" required />
+                            <textarea id="desc" placeholder="Product details, sizes, and keywords..." class="h-24" required></textarea>
+                        </div>
+                        <button type="submit" class="w-full btn-primary py-4">Publish Live</button>
                     </form>
+
+                    <div class="space-y-3">
+                        <h3 class="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Manage Listings</h3>
+                        ${products.filter(p => p.vendorId === currentUser.uid).map(p => `
+                            <div class="bg-zinc-900 p-3 rounded-2xl flex items-center justify-between border border-zinc-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg overflow-hidden">${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}</div>
+                                    <p class="text-[10px] font-black uppercase truncate max-w-[120px]">${p.title}</p>
+                                </div>
+                                <button onclick="window.handleDelete('${p.id}')" class="p-2 text-red-500"><i data-lucide="trash-2" size="16"></i></button>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>` + renderNav();
-            document.getElementById('productForm').onsubmit = async (e) => {
+            document.getElementById('pForm').onsubmit = async (e) => {
                 e.preventDefault();
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), {
                     title: document.getElementById('title').value,
                     price: parseFloat(document.getElementById('price').value),
                     description: document.getElementById('desc').value,
                     category: document.getElementById('pCat').value,
-                    whatsapp: userProfile.whatsapp,
-                    shopName: userProfile.shopName,
+                    whatsapp: userProfile.whatsapp || HELP_WHATSAPP,
+                    shopName: userProfile.shopName || "Admin Direct",
                     mediaUrl: document.getElementById('mediaUrl').value,
                     vendorId: currentUser.uid,
-                    wishlistCount: 0,
                     createdAt: serverTimestamp()
                 });
-                setView('feed');
+                alert("Listed successfully!");
+                window.setView('feed');
             };
         }
 
-        function renderBuyerDashboard() {
-            const photoUrl = userProfile.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`;
-            appContainer.innerHTML = `
-                <div class="p-8 space-y-10 flex-1 overflow-y-auto no-scrollbar pb-32">
-                    <div class="text-center space-y-4">
-                        <img src="${photoUrl}" class="w-24 h-24 rounded-[32px] mx-auto shadow-2xl" />
-                        <h2 class="text-2xl font-black uppercase tracking-tighter">${currentUser.email || 'Global Buyer'}</h2>
-                    </div>
-                    <div class="card space-y-4">
-                        <p class="text-[9px] font-bold text-zinc-600 uppercase">Currency Preference</p>
-                        <select onchange="window.updateProfile({currency: this.value})">
-                            <option value="USD" ${userProfile.currency === 'USD' ? 'selected' : ''}>USD ($)</option>
-                            <option value="INR" ${userProfile.currency === 'INR' ? 'selected' : ''}>INR (₹)</option>
-                            <option value="EUR" ${userProfile.currency === 'EUR' ? 'selected' : ''}>EUR (€)</option>
-                        </select>
-                    </div>
-                    <div class="space-y-3">
-                        ${!isReseller && userProfile.role === 'buyer' && !isAdmin ? `<button onclick="setView('reseller_reg')" class="w-full bg-indigo-600 py-5 rounded-3xl font-black uppercase text-xs">Join Indian Reseller Program</button>` : ''}
-                        <button onclick="signOut(auth)" class="w-full p-5 text-red-500 font-black uppercase text-xs">Sign Out</button>
-                    </div>
-                </div>` + renderNav();
-            window.updateProfile = async (data) => {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', currentUser.uid), data);
-                userProfile = { ...userProfile, ...data };
-                render();
-            };
-        }
-
-        function getMediaHTML(url, className) {
-            if (!url) return `<div class="${className} bg-zinc-900 flex items-center justify-center"><i data-lucide="image" class="opacity-10"></i></div>`;
-            const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video');
-            if (isVideo) return `<video src="${url}" class="${className}" muted autoplay loop playsinline></video>`;
-            return `<img src="${url}" class="${className}" onerror="this.src='https://via.placeholder.com/400x500?text=Invalid+Media'">`;
-        }
-
-        function renderAuth() {
+        function renderGateway() {
             appContainer.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-full p-8 space-y-12 bg-black">
-                    <h1 class="text-5xl font-black italic tracking-tighter uppercase italic">Trend<span class="text-indigo-500 font-black">Social</span></h1>
-                    <form id="authForm" class="w-full space-y-4">
-                        <input id="email" type="email" placeholder="Email Address" required />
-                        <button type="submit" class="w-full btn-primary py-5 rounded-3xl">Get Login Link</button>
+                    <div class="text-center space-y-1">
+                        <h1 class="text-5xl font-black italic tracking-tighter uppercase">Trend<span class="text-indigo-500">Social</span></h1>
+                        <p class="text-[10px] font-black uppercase text-zinc-600 tracking-[0.4em]">Official Gateway</p>
+                    </div>
+
+                    <div id="gateCards" class="w-full space-y-4">
+                        <div onclick="window.loginFlow('buyer')" class="card border-zinc-800 hover:border-indigo-500 cursor-pointer">
+                            <h3 class="font-black text-sm uppercase">Enter as Buyer</h3>
+                            <p class="text-[10px] text-zinc-500 mt-1">Shop international trends.</p>
+                        </div>
+                        <div onclick="window.loginFlow('reseller')" class="card border-zinc-800 hover:border-indigo-500 cursor-pointer">
+                            <h3 class="font-black text-sm uppercase">Enter as Seller</h3>
+                            <p class="text-[10px] text-zinc-500 mt-1">Indian merchant verification.</p>
+                        </div>
+                        <div onclick="window.loginFlow('admin')" class="p-4 text-center cursor-pointer">
+                            <button class="text-[10px] font-black uppercase text-zinc-700 hover:text-amber-500 tracking-widest">Master Admin Login</button>
+                        </div>
+                    </div>
+
+                    <form id="authForm" class="hidden w-full space-y-4 animate-in slide-in-from-bottom duration-300">
+                        <input id="email" type="email" placeholder="Enter your email" required />
+                        <button type="submit" class="w-full btn-primary py-5">Send Magic Login Link</button>
+                        <button type="button" onclick="window.location.reload()" class="w-full text-[10px] font-black uppercase text-zinc-600">Back</button>
                     </form>
-                    <button onclick="setView('feed')" class="text-zinc-700 text-[10px] font-black uppercase">Browse as Guest</button>
                 </div>
             `;
-            document.getElementById('authForm').onsubmit = async (e) => {
+            window.loginFlow = (role) => {
+                document.getElementById('gateCards').classList.add('hidden');
+                document.getElementById('authForm').classList.remove('hidden');
+                window.localStorage.setItem('targetRole', role === 'reseller' ? 'reseller_pending' : role);
+                document.getElementById('authForm').onsubmit = async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('email').value;
+                    await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
+                    window.localStorage.setItem('emailForSignIn', email);
+                    alert("Magic link sent! Check your inbox to sign in.");
+                };
+            };
+        }
+
+        function renderProfile() {
+            const photoUrl = userProfile.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`;
+            appContainer.innerHTML = `
+                <div class="p-8 space-y-10 flex-1 overflow-y-auto pb-32 no-scrollbar">
+                    <div class="text-center space-y-4">
+                        <img src="${photoUrl}" class="w-24 h-24 rounded-[32px] mx-auto border-4 border-zinc-900 shadow-2xl" />
+                        <div>
+                            <h2 class="text-2xl font-black uppercase tracking-tighter">${currentUser.isAnonymous ? 'Guest' : (currentUser.email || 'Member')}</h2>
+                            <span class="badge ${isAdmin ? 'badge-admin' : (isReseller ? 'badge-reseller' : 'badge-buyer')}">${userProfile.role}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        ${isAdmin ? `<button onclick="window.setView('admin')" class="w-full bg-amber-500 text-black p-5 rounded-3xl font-black uppercase text-xs shadow-xl shadow-amber-500/10">Admin Control Panel</button>` : ''}
+                        ${isReseller ? `<button onclick="window.setView('reseller_hub')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white shadow-xl shadow-indigo-600/10">Open Seller Hub</button>` : ''}
+                        ${!isReseller && userProfile.role === 'buyer' && !isAdmin && !currentUser.isAnonymous ? `<button onclick="window.setView('reseller_reg')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white">Apply as Reseller</button>` : ''}
+                        
+                        <div class="card space-y-4 !bg-zinc-900/50">
+                            <p class="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Currency Preferences</p>
+                            <select onchange="window.updateProfile({currency: this.value})">
+                                <option value="USD" ${userProfile.currency === 'USD' ? 'selected' : ''}>USD ($)</option>
+                                <option value="INR" ${userProfile.currency === 'INR' ? 'selected' : ''}>INR (₹)</option>
+                                <option value="EUR" ${userProfile.currency === 'EUR' ? 'selected' : ''}>EUR (€)</option>
+                            </select>
+                        </div>
+
+                        <button onclick="window.setView('help')" class="w-full p-5 bg-zinc-900 rounded-3xl font-black uppercase text-zinc-500 text-[10px] tracking-widest border border-zinc-800">Need Help?</button>
+                        ${currentUser.isAnonymous ? `<button onclick="window.setView('auth')" class="w-full btn-primary py-5">Sign In / Register</button>` : `<button onclick="window.logout()" class="w-full p-5 text-red-500 font-black uppercase text-[10px] tracking-widest">Logout</button>`}
+                    </div>
+                </div>` + renderNav();
+        }
+
+        function renderHelp() {
+            appContainer.innerHTML = renderHeader() + `
+                <main class="flex-1 p-8 text-center space-y-12 flex flex-col justify-center">
+                    <div class="w-24 h-24 bg-indigo-500/10 text-indigo-500 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl">
+                        <i data-lucide="help-circle" class="w-12 h-12"></i>
+                    </div>
+                    <div class="space-y-4">
+                        <h2 class="text-2xl font-black uppercase italic tracking-tighter">Support</h2>
+                        <p class="text-zinc-500 text-sm leading-relaxed">Direct concierge for shipping, payments, and seller verification.</p>
+                        <p class="text-indigo-400 font-black text-xs uppercase underline">${HELP_EMAIL}</p>
+                    </div>
+                    <div class="space-y-3">
+                        <button onclick="window.open('mailto:${HELP_EMAIL}', '_blank')" class="w-full bg-white text-black py-5 rounded-3xl font-black uppercase text-xs">Email Concierge</button>
+                        <button onclick="window.open('https://wa.me/${HELP_WHATSAPP.replace(/\D/g,'')}', '_blank')" class="w-full bg-green-600 text-white py-5 rounded-3xl font-black uppercase text-xs flex items-center justify-center gap-2">
+                            <i data-lucide="phone" size="18"></i> WhatsApp Us
+                        </button>
+                    </div>
+                </main>` + renderNav();
+        }
+
+        // --- HELPERS ---
+        function getMediaHTML(url, className) {
+            if (!url) return `<div class="${className} bg-zinc-900"></div>`;
+            const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video');
+            if (isVideo) return `<video src="${url}" class="${className}" muted autoplay loop playsinline></video>`;
+            return `<img src="${url}" class="${className}" onerror="this.src='https://via.placeholder.com/400x500?text=Media+Link+Error'">`;
+        }
+
+        const formatPrice = (p) => `${symbols[userProfile.currency || 'USD']}${(p * rates[userProfile.currency || 'USD']).toLocaleString(undefined, {minimumFractionDigits: 0})}`;
+
+        function renderProductDetail() {
+            const p = selectedProduct;
+            appContainer.innerHTML = `
+                <div class="h-full flex flex-col bg-black overflow-y-auto no-scrollbar pb-32">
+                    <div class="relative aspect-square">
+                        <button onclick="window.setView('feed')" class="absolute top-4 left-4 z-10 p-2 bg-black/40 rounded-full"><i data-lucide="arrow-left"></i></button>
+                        ${getMediaHTML(p.mediaUrl, 'w-full h-full object-contain')}
+                    </div>
+                    <div class="p-6 space-y-6 bg-zinc-950 flex-1 rounded-t-[3rem] -mt-10 border-t border-white/5 relative z-10 shadow-2xl">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-2xl font-black uppercase tracking-tighter">${p.title}</h2>
+                                <p class="text-indigo-500 text-[10px] font-black uppercase mt-1">${p.category} | ${p.shopName || 'Verified Merchant'}</p>
+                            </div>
+                            <span class="text-3xl font-black text-indigo-500">${formatPrice(p.price)}</span>
+                        </div>
+                        <p class="text-zinc-400 text-sm leading-relaxed">${p.description}</p>
+                        <div class="grid grid-cols-2 gap-3 pt-4">
+                            <button onclick="window.setView('chat', '${p.vendorId}')" class="btn-primary py-5 flex items-center justify-center gap-2">
+                                <i data-lucide="message-circle" class="w-5 h-5"></i> CHAT
+                            </button>
+                            <button onclick="window.open('https://wa.me/${p.whatsapp?.replace(/\D/g,'')}', '_blank')" class="bg-green-600 rounded-2xl py-4 flex items-center justify-center text-white gap-2 font-black text-[10px] uppercase">
+                                <i data-lucide="phone" class="w-4 h-4"></i> WHATSAPP
+                            </button>
+                        </div>
+                    </div>
+                </div>` + renderNav();
+            lucide.createIcons();
+        }
+
+        function renderInbox() {
+            appContainer.innerHTML = renderHeader() + `
+                <main class="flex-1 p-4 space-y-4 pb-32 overflow-y-auto no-scrollbar">
+                    <h2 class="text-2xl font-black uppercase px-2 italic">Inbox</h2>
+                    <div id="ib" class="space-y-3"></div>
+                </main>` + renderNav();
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'active_chats'), (snap) => {
+                const list = document.getElementById('ib');
+                if (!list) return;
+                const chats = snap.docs.map(d => d.data()).filter(c => c.participants.includes(currentUser.uid));
+                list.innerHTML = chats.length ? chats.map(c => `<div onclick="window.setView('chat', '${c.participants.find(p => p !== currentUser.uid)}')" class="p-5 bg-zinc-900 rounded-3xl border border-zinc-800 flex items-center gap-4"><div class="avatar flex items-center justify-center font-bold text-indigo-400">V</div><div class="flex-1 overflow-hidden"><p class="font-black text-xs uppercase">Vendor Chat</p><p class="text-xs text-zinc-500 truncate">${c.lastMsg}</p></div></div>`).join('') : `<p class="py-20 text-center text-zinc-800 italic uppercase font-black text-[10px]">No messages yet</p>`;
+            });
+        }
+
+        function renderChat() {
+            const rid = activeChatRecipient;
+            const cid = [currentUser.uid, rid].sort().join('_');
+            appContainer.innerHTML = `
+                <div class="flex flex-col h-full bg-black">
+                    <div class="p-5 border-b border-zinc-900 flex items-center gap-3 glass z-20"><button onclick="window.setView('messages')"><i data-lucide="arrow-left"></i></button><span class="font-black text-[10px] uppercase tracking-widest text-zinc-400">Secure Merchant Chat</span></div>
+                    <div id="cms" class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar"></div>
+                    <form id="cf" class="p-4 bg-zinc-900 border-t border-zinc-800 flex gap-2"><input id="mt" placeholder="Type here..." class="flex-1 rounded-2xl outline-none" /><button class="p-4 bg-white text-black rounded-2xl"><i data-lucide="send" size="18"></i></button></form>
+                </div>`;
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'chats', cid, 'messages'), (snap) => {
+                const b = document.getElementById('cms');
+                if (!b) return;
+                const ms = snap.docs.map(d => d.data()).sort((a,b) => a.timestamp?.seconds - b.timestamp?.seconds);
+                b.innerHTML = ms.map(m => `<div class="flex ${m.sender === currentUser.uid ? 'justify-end' : 'justify-start'}"><div class="max-w-[85%] p-4 rounded-3xl text-xs ${m.sender === currentUser.uid ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-zinc-800 text-zinc-100 rounded-bl-none'}">${m.text}</div></div>`).join('');
+                b.scrollTop = b.scrollHeight;
+            });
+            document.getElementById('cf').onsubmit = async (e) => {
                 e.preventDefault();
-                const email = document.getElementById('email').value;
-                await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
-                window.localStorage.setItem('emailForSignIn', email);
-                alert("Check your email for the magic link!");
+                const t = document.getElementById('mt').value;
+                if (!t.trim()) return;
+                document.getElementById('mt').value = '';
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'chats', cid, 'messages'), { sender: currentUser.uid, text: t, timestamp: serverTimestamp() });
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'active_chats', cid), { participants: [currentUser.uid, rid], lastMsg: t, lastUpdate: serverTimestamp() }, { merge: true });
+            };
+        }
+
+        function renderResellerRegistration() {
+            appContainer.innerHTML = `
+                <div class="p-8 space-y-8 flex-1 overflow-y-auto pb-32">
+                    <div class="text-center space-y-2">
+                        <h2 class="text-2xl font-black uppercase italic tracking-tighter">Indian Merchant Hub</h2>
+                        <p class="text-[10px] text-zinc-500 uppercase font-black tracking-widest">Verification for Indian Resellers</p>
+                    </div>
+                    <form id="regForm" class="space-y-4">
+                        <input id="sName" placeholder="Business Name / Instagram Shop" required />
+                        <input id="pan" placeholder="PAN Card ID" class="uppercase" required />
+                        <div class="grid grid-cols-2 gap-2">
+                            <input id="acc" type="number" placeholder="Account No" required />
+                            <input id="ifsc" placeholder="IFSC Code" class="uppercase" required />
+                        </div>
+                        <input id="wa" placeholder="WhatsApp (for Buyer Chat)" required />
+                        <button type="submit" class="w-full btn-primary py-5">Submit Business Profile</button>
+                    </form>
+                </div>` + renderNav();
+            document.getElementById('regForm').onsubmit = async (e) => {
+                e.preventDefault();
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', currentUser.uid), {
+                    shopName: document.getElementById('sName').value,
+                    pan: document.getElementById('pan').value,
+                    acc: document.getElementById('acc').value,
+                    ifsc: document.getElementById('ifsc').value,
+                    whatsapp: document.getElementById('wa').value,
+                    role: 'reseller_pending'
+                });
+                alert("Profile submitted! Admin will verify your documents shortly.");
+                window.setView('profile');
             };
         }
 
