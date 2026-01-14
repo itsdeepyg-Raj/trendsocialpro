@@ -56,7 +56,7 @@
             appId: "1:859903608854:web:82b46edf364994f7cbcd37"
         };
 
-        const appId = 'trend-social-stable-v24'; 
+        const appId = 'trend-social-stable-v26'; 
         const HELP_EMAIL = "itsdeepyg@gmail.com";
         const HELP_WHATSAPP = "+919833801919"; 
         
@@ -76,6 +76,7 @@
         let searchQuery = "";
         let selectedProduct = null;
         let activeChatRecipient = null;
+        let listenersActive = false;
 
         const rates = { USD: 1, INR: 86, EUR: 0.92 };
         const symbols = { USD: '$', INR: '₹', EUR: '€' };
@@ -92,9 +93,25 @@
             render();
         };
 
+        window.setCategory = (cat) => {
+            activeCategory = cat;
+            render();
+        };
+
         window.handleSearch = (v) => {
             searchQuery = v;
-            render();
+            // Optimize: Only update the grid part if in feed view, do not re-render entire app
+            if (activeView === 'feed') {
+                const grid = document.getElementById('feedGrid');
+                if (grid) {
+                    let filtered = activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory);
+                    if (searchQuery) filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
+                    grid.innerHTML = generateGridHTML(filtered);
+                    lucide.createIcons();
+                }
+            } else {
+                render();
+            }
         };
 
         window.logout = async () => {
@@ -126,6 +143,13 @@
         const initAuth = async () => {
             onAuthStateChanged(auth, async (user) => {
                 currentUser = user;
+
+                // CRITICAL FIX: Initialize Listeners for EVERYONE (Guest or Logged In)
+                if (!listenersActive) {
+                    initListeners();
+                    listenersActive = true;
+                }
+                
                 if (user && !user.isAnonymous) {
                     const profileRef = doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid);
                     const profileSnap = await getDoc(profileRef);
@@ -154,7 +178,7 @@
                     
                     isAdmin = userProfile.role === 'admin';
                     isReseller = userProfile.role === 'reseller';
-                    initListeners();
+                    
                     if (activeView === 'auth') {
                         activeView = 'profile'; 
                         if (userProfile.role === 'buyer') activeView = 'feed';
@@ -174,7 +198,8 @@
         const initListeners = () => {
             onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'products'), (snapshot) => {
                 products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                render();
+                // Force render only if we are in feed to avoid interrupting forms
+                if (activeView === 'feed') render();
             });
         };
 
@@ -226,6 +251,21 @@
             `;
         }
 
+        function generateGridHTML(filtered) {
+             if (filtered.length === 0) {
+                return `<div class="col-span-2 flex flex-col items-center justify-center pt-20 px-10 text-center opacity-50"><i data-lucide="shopping-bag" class="w-12 h-12 mb-4"></i><p class="text-xs font-black uppercase tracking-widest">No products yet</p></div>`;
+            }
+            return filtered.map(p => `
+                <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden border-b border-zinc-900" onclick='window.setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
+                    ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover', false)}
+                    <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/40 to-transparent">
+                        <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
+                        <p class="text-indigo-500 font-black text-[10px] mt-0.5">${formatPrice(p.price)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
         function renderFeed() {
             let filtered = activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory);
             if (searchQuery) filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -238,29 +278,18 @@
                     </div>
                     <div class="flex gap-2 overflow-x-auto no-scrollbar">
                         ${['all', 'beauty', 'high-end', 'affordable'].map(cat => `
-                            <button onclick="window.activeCategory='${cat}'; window.render()" class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border ${activeCategory === cat ? 'bg-white text-black border-white' : 'border-zinc-800 text-zinc-500'}">
+                            <button onclick="window.setCategory('${cat}')" class="px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border ${activeCategory === cat ? 'bg-white text-black border-white' : 'border-zinc-800 text-zinc-500'}">
                                 ${cat.replace('-',' ')}
                             </button>
                         `).join('')}
                     </div>
                 </div>
                 <main class="flex-1 overflow-y-auto pb-24 no-scrollbar">
-                    <div class="grid grid-cols-2 gap-px bg-zinc-900">
-                        ${filtered.map(p => `
-                            <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden border-b border-zinc-900" onclick='window.setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
-                                ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover', false)}
-                                <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/40 to-transparent">
-                                    <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
-                                    <p class="text-indigo-500 font-black text-[10px] mt-0.5">${formatPrice(p.price)}</p>
-                                </div>
-                            </div>
-                        `).join('')}
+                    <div id="feedGrid" class="grid grid-cols-2 gap-px bg-zinc-900">
+                        ${generateGridHTML(filtered)}
                     </div>
-                    ${filtered.length === 0 ? `<div class="flex flex-col items-center justify-center pt-20 px-10 text-center opacity-50"><i data-lucide="shopping-bag" class="w-12 h-12 mb-4"></i><p class="text-xs font-black uppercase tracking-widest">No products yet</p></div>` : ''}
                 </main>
             ` + renderNav();
-            window.activeCategory = activeCategory;
-            window.render = render;
         }
 
         function renderAdminDashboard() {
@@ -315,8 +344,8 @@
                         <div class="space-y-4">
                             <div class="space-y-1">
                                 <label class="text-[9px] font-black text-indigo-400 uppercase">Product Image / Video URL</label>
-                                <input id="mediaUrl" placeholder="Paste YouTube, Instagram Link or Image URL" required />
-                                <p class="text-[9px] text-zinc-600">Supports YouTube/IG links, .jpg, .png, or .mp4</p>
+                                <input id="mediaUrl" placeholder="Paste YouTube, Shorts, Instagram Link or Image URL" required />
+                                <p class="text-[9px] text-zinc-600">Supports YT/Shorts/IG links, .jpg, .png, or .mp4</p>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
                                 <select id="pCat">
@@ -492,11 +521,13 @@
         function getMediaHTML(url, className, isDetailView = false) {
             if (!url) return `<div class="${className} bg-zinc-900"></div>`;
             
-            // Handle YouTube
+            // Handle YouTube & Shorts
             if (url.includes('youtube.com') || url.includes('youtu.be')) {
                 let videoId = '';
                 try {
-                    if (url.includes('youtu.be')) {
+                    if (url.includes('/shorts/')) {
+                        videoId = url.split('/shorts/')[1].split('?')[0];
+                    } else if (url.includes('youtu.be')) {
                         videoId = url.split('.be/')[1].split('?')[0];
                     } else if (url.includes('v=')) {
                         videoId = url.split('v=')[1].split('&')[0];
