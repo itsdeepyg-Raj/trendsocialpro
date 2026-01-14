@@ -58,7 +58,7 @@
 
         const appId = 'trend-social-stable-v22'; 
         const HELP_EMAIL = "itsdeepyg@gmail.com";
-        const HELP_WHATSAPP = "+910000000000"; 
+        const HELP_WHATSAPP = "+919833801919"; 
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -77,7 +77,7 @@
         let selectedProduct = null;
         let activeChatRecipient = null;
 
-        const rates = { USD: 1, INR: 83, EUR: 0.92 };
+        const rates = { USD: 1, INR: 86, EUR: 0.92 }; // Updated INR rate slightly
         const symbols = { USD: '$', INR: '₹', EUR: '€' };
 
         const appContainer = document.getElementById('app');
@@ -133,9 +133,19 @@
                     if (profileSnap.exists()) {
                         userProfile = profileSnap.data();
                     } else {
+                        // SMART CURRENCY DETECTION
+                        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        const defaultCurrency = timeZone === 'Asia/Kolkata' ? 'INR' : 'USD';
+
                         // NEW USER CREATION LOGIC
                         const target = window.localStorage.getItem('targetRole') || 'buyer';
-                        userProfile = { uid: user.uid, role: target, currency: 'USD', photo: '', joinedAt: new Date().toISOString() };
+                        userProfile = { 
+                            uid: user.uid, 
+                            role: target, 
+                            currency: defaultCurrency, // Set auto-detected currency
+                            photo: '', 
+                            joinedAt: new Date().toISOString() 
+                        };
                         await setDoc(profileRef, userProfile);
                         // Clean up
                         window.localStorage.removeItem('targetRole');
@@ -262,6 +272,12 @@
                             </div>
                         `).join('')}
                     </div>
+                    ${filtered.length === 0 ? `
+                        <div class="flex flex-col items-center justify-center pt-20 px-10 text-center opacity-50">
+                            <i data-lucide="shopping-bag" class="w-12 h-12 mb-4"></i>
+                            <p class="text-xs font-black uppercase tracking-widest">No products yet</p>
+                        </div>
+                    ` : ''}
                 </main>
             ` + renderNav();
             window.activeCategory = activeCategory;
@@ -318,7 +334,11 @@
                     </div>
                     <form id="pForm" class="card space-y-4 bg-zinc-900 shadow-2xl">
                         <div class="space-y-4">
-                            <input id="mediaUrl" placeholder="Direct Media URL (Instagram/YouTube/Drive)" required />
+                            <div class="space-y-1">
+                                <label class="text-[9px] font-black text-indigo-400 uppercase">Product Image URL</label>
+                                <input id="mediaUrl" placeholder="https://example.com/image.jpg" required />
+                                <p class="text-[9px] text-zinc-600">Must be a direct link ending in .jpg, .png, or .mp4</p>
+                            </div>
                             <div class="grid grid-cols-2 gap-2">
                                 <select id="pCat">
                                     <option value="high-end">High-end Luxury</option>
@@ -520,7 +540,7 @@
             if (!url) return `<div class="${className} bg-zinc-900"></div>`;
             const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video');
             if (isVideo) return `<video src="${url}" class="${className}" muted autoplay loop playsinline></video>`;
-            return `<img src="${url}" class="${className}" onerror="this.src='https://via.placeholder.com/400x500?text=Media+Link+Error'">`;
+            return `<img src="${url}" class="${className}" onerror="this.src='https://via.placeholder.com/400x500?text=Link+Error'">`;
         }
 
         const formatPrice = (p) => `${symbols[userProfile.currency || 'USD']}${(p * rates[userProfile.currency || 'USD']).toLocaleString(undefined, {minimumFractionDigits: 0})}`;
