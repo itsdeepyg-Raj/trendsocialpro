@@ -56,7 +56,7 @@
             appId: "1:859903608854:web:82b46edf364994f7cbcd37"
         };
 
-        const appId = 'trend-social-stable-v22'; 
+        const appId = 'trend-social-stable-v24'; 
         const HELP_EMAIL = "itsdeepyg@gmail.com";
         const HELP_WHATSAPP = "+919833801919"; 
         
@@ -77,7 +77,7 @@
         let selectedProduct = null;
         let activeChatRecipient = null;
 
-        const rates = { USD: 1, INR: 86, EUR: 0.92 }; // Updated INR rate slightly
+        const rates = { USD: 1, INR: 86, EUR: 0.92 };
         const symbols = { USD: '$', INR: '₹', EUR: '€' };
 
         const appContainer = document.getElementById('app');
@@ -133,39 +133,29 @@
                     if (profileSnap.exists()) {
                         userProfile = profileSnap.data();
                     } else {
-                        // SMART CURRENCY DETECTION
                         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
                         const defaultCurrency = timeZone === 'Asia/Kolkata' ? 'INR' : 'USD';
-
-                        // NEW USER CREATION LOGIC
                         const target = window.localStorage.getItem('targetRole') || 'buyer';
                         userProfile = { 
                             uid: user.uid, 
                             role: target, 
-                            currency: defaultCurrency, // Set auto-detected currency
+                            currency: defaultCurrency, 
                             photo: '', 
                             joinedAt: new Date().toISOString() 
                         };
                         await setDoc(profileRef, userProfile);
-                        // Clean up
                         window.localStorage.removeItem('targetRole');
                     }
 
-                    // MASTER OVERRIDE FOR YOUR EMAIL
                     if (user.email === HELP_EMAIL) {
                         await updateDoc(profileRef, { role: 'admin' });
                         userProfile.role = 'admin';
                     }
                     
-                    // Set global flags
                     isAdmin = userProfile.role === 'admin';
                     isReseller = userProfile.role === 'reseller';
-                    
                     initListeners();
-
-                    // AUTO-REDIRECT FROM AUTH SCREEN ON SUCCESS
                     if (activeView === 'auth') {
-                        // Redirect based on role
                         activeView = 'profile'; 
                         if (userProfile.role === 'buyer') activeView = 'feed';
                     }
@@ -173,13 +163,8 @@
                     userProfile = { role: 'buyer', currency: 'USD' };
                     isAdmin = false;
                     isReseller = false;
-                    
                     if (!user) {
-                        try {
-                           await signInAnonymously(auth);
-                        } catch (e) {
-                            console.log("Anon auth error:", e);
-                        }
+                        try { await signInAnonymously(auth); } catch (e) { console.log("Anon auth error:", e); }
                     }
                 }
                 render();
@@ -196,7 +181,6 @@
         // --- RENDER ENGINE ---
         function render() {
             if (!currentUser) return;
-            
             switch (activeView) {
                 case 'feed': renderFeed(); break;
                 case 'product': renderProductDetail(); break;
@@ -264,7 +248,7 @@
                     <div class="grid grid-cols-2 gap-px bg-zinc-900">
                         ${filtered.map(p => `
                             <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden border-b border-zinc-900" onclick='window.setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
-                                ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}
+                                ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover', false)}
                                 <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/40 to-transparent">
                                     <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
                                     <p class="text-indigo-500 font-black text-[10px] mt-0.5">${formatPrice(p.price)}</p>
@@ -272,12 +256,7 @@
                             </div>
                         `).join('')}
                     </div>
-                    ${filtered.length === 0 ? `
-                        <div class="flex flex-col items-center justify-center pt-20 px-10 text-center opacity-50">
-                            <i data-lucide="shopping-bag" class="w-12 h-12 mb-4"></i>
-                            <p class="text-xs font-black uppercase tracking-widest">No products yet</p>
-                        </div>
-                    ` : ''}
+                    ${filtered.length === 0 ? `<div class="flex flex-col items-center justify-center pt-20 px-10 text-center opacity-50"><i data-lucide="shopping-bag" class="w-12 h-12 mb-4"></i><p class="text-xs font-black uppercase tracking-widest">No products yet</p></div>` : ''}
                 </main>
             ` + renderNav();
             window.activeCategory = activeCategory;
@@ -335,9 +314,9 @@
                     <form id="pForm" class="card space-y-4 bg-zinc-900 shadow-2xl">
                         <div class="space-y-4">
                             <div class="space-y-1">
-                                <label class="text-[9px] font-black text-indigo-400 uppercase">Product Image URL</label>
-                                <input id="mediaUrl" placeholder="https://example.com/image.jpg" required />
-                                <p class="text-[9px] text-zinc-600">Must be a direct link ending in .jpg, .png, or .mp4</p>
+                                <label class="text-[9px] font-black text-indigo-400 uppercase">Product Image / Video URL</label>
+                                <input id="mediaUrl" placeholder="Paste YouTube, Instagram Link or Image URL" required />
+                                <p class="text-[9px] text-zinc-600">Supports YouTube/IG links, .jpg, .png, or .mp4</p>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
                                 <select id="pCat">
@@ -358,7 +337,7 @@
                         ${products.filter(p => p.vendorId === currentUser.uid).map(p => `
                             <div class="bg-zinc-900 p-3 rounded-2xl flex items-center justify-between border border-zinc-800">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-lg overflow-hidden">${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}</div>
+                                    <div class="w-10 h-10 rounded-lg overflow-hidden">${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover', false)}</div>
                                     <p class="text-[10px] font-black uppercase truncate max-w-[120px]">${p.title}</p>
                                 </div>
                                 <button onclick="window.handleDeleteProduct('${p.id}')" class="p-2 text-red-500"><i data-lucide="trash-2" size="16"></i></button>
@@ -426,52 +405,31 @@
                 document.getElementById('gateCards').classList.add('hidden');
                 document.getElementById('authForm').classList.remove('hidden');
                 document.getElementById('formTitle').innerText = role === 'admin' ? 'Master Access' : (role + ' Access');
-                
                 window.localStorage.setItem('targetRole', role === 'reseller' ? 'reseller_pending' : role);
                 
-                // Login Handler
                 document.getElementById('loginBtn').onclick = async function() {
                     const email = document.getElementById('email').value;
                     const pass = document.getElementById('password').value;
                     if (!email || !pass) { alert("Please fill in both email and password."); return; }
-                    
                     this.innerText = "Logging in...";
                     this.disabled = true;
-
-                    try {
-                        await signInWithEmailAndPassword(auth, email, pass);
-                        // Auth listener handles redirect
-                    } catch (e) {
-                        alert("Login Failed: " + e.message);
-                        this.innerText = "Log In";
-                        this.disabled = false;
-                    }
+                    try { await signInWithEmailAndPassword(auth, email, pass); } 
+                    catch (e) { alert("Login Failed: " + e.message); this.innerText = "Log In"; this.disabled = false; }
                 };
 
-                // Signup Handler
                 document.getElementById('signupBtn').onclick = async function() {
                     const email = document.getElementById('email').value;
                     const pass = document.getElementById('password').value;
                     if (!email || !pass) { alert("Please fill in both email and password."); return; }
-
                     this.innerText = "Creating...";
                     this.disabled = true;
-
-                    try {
-                        await createUserWithEmailAndPassword(auth, email, pass);
-                        // Auth listener handles redirect
-                    } catch (e) {
-                        if (e.code === 'auth/operation-not-allowed') {
-                            alert("Sign-up is currently disabled. Please enable 'Email/Password' in your Firebase Console -> Authentication.");
-                        } else if (e.code === 'auth/email-already-in-use') {
-                             alert("This email is already registered. Please use 'Log In' instead.");
-                        } else if (e.code === 'auth/weak-password') {
-                             alert("Password should be at least 6 characters.");
-                        } else {
-                            alert("Signup Failed: " + e.message);
-                        }
-                        this.innerText = "Create Account";
-                        this.disabled = false;
+                    try { await createUserWithEmailAndPassword(auth, email, pass); } 
+                    catch (e) {
+                        if (e.code === 'auth/operation-not-allowed') alert("Sign-up disabled. Enable Email/Password in Console.");
+                        else if (e.code === 'auth/email-already-in-use') alert("Email already used. Try Log In.");
+                        else if (e.code === 'auth/weak-password') alert("Password must be 6+ chars.");
+                        else alert("Signup Failed: " + e.message);
+                        this.innerText = "Create Account"; this.disabled = false;
                     }
                 };
             };
@@ -490,14 +448,10 @@
                             <span class="badge ${isAdmin ? 'badge-admin' : (isReseller ? 'badge-reseller' : (isPending ? 'badge-pending' : 'badge-buyer'))}">${userProfile.role.replace('_', ' ')}</span>
                         </div>
                     </div>
-                    
                     <div class="space-y-3">
                         ${isAdmin ? `<button onclick="window.setView('admin')" class="w-full bg-amber-500 text-black p-5 rounded-3xl font-black uppercase text-xs shadow-xl shadow-amber-500/10">Admin Control Panel</button>` : ''}
-                        
                         ${isReseller ? `<button onclick="window.setView('reseller_hub')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white shadow-xl shadow-indigo-600/10">Open Seller Hub</button>` : ''}
-                        
                         ${isPending ? `<div class="card border-dashed border-zinc-600 text-center"><h3 class="font-black text-zinc-400 text-xs uppercase">Verification Pending</h3><p class="text-[9px] text-zinc-500 mt-2">Admin is reviewing your details.</p></div>` : ''}
-
                         ${!isReseller && !isPending && userProfile.role === 'buyer' && !isAdmin && !currentUser.isAnonymous ? `<button onclick="window.setView('reseller_reg')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white">Apply as Reseller</button>` : ''}
                         
                         <div class="card space-y-4 !bg-zinc-900/50">
@@ -508,7 +462,6 @@
                                 <option value="EUR" ${userProfile.currency === 'EUR' ? 'selected' : ''}>EUR (€)</option>
                             </select>
                         </div>
-
                         <button onclick="window.setView('help')" class="w-full p-5 bg-zinc-900 rounded-3xl font-black uppercase text-zinc-500 text-[10px] tracking-widest border border-zinc-800">Need Help?</button>
                         ${currentUser.isAnonymous ? `<button onclick="window.setView('auth')" class="w-full btn-primary py-5">Sign In / Register</button>` : `<button onclick="window.logout()" class="w-full p-5 text-red-500 font-black uppercase text-[10px] tracking-widest">Logout</button>`}
                     </div>
@@ -536,10 +489,47 @@
         }
 
         // --- HELPERS ---
-        function getMediaHTML(url, className) {
+        function getMediaHTML(url, className, isDetailView = false) {
             if (!url) return `<div class="${className} bg-zinc-900"></div>`;
-            const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video');
-            if (isVideo) return `<video src="${url}" class="${className}" muted autoplay loop playsinline></video>`;
+            
+            // Handle YouTube
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                let videoId = '';
+                try {
+                    if (url.includes('youtu.be')) {
+                        videoId = url.split('.be/')[1].split('?')[0];
+                    } else if (url.includes('v=')) {
+                        videoId = url.split('v=')[1].split('&')[0];
+                    } else if (url.includes('embed')) {
+                        videoId = url.split('embed/')[1].split('?')[0];
+                    }
+                } catch(e) { console.log('YT parse error', e); }
+
+                if (videoId) {
+                    if (isDetailView) {
+                        return `<iframe src="https://www.youtube.com/embed/${videoId}?rel=0" class="${className}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                    } else {
+                        return `<img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" class="${className}" style="object-fit: cover;">`;
+                    }
+                }
+            }
+
+            // Handle Instagram
+            if (url.includes('instagram.com')) {
+                // Clean URL to base post
+                let cleanUrl = url.split('?')[0];
+                if (!cleanUrl.endsWith('/')) cleanUrl += '/';
+                const embedUrl = cleanUrl + 'embed';
+                return `<iframe src="${embedUrl}" class="${className}" style="border:none; overflow:hidden;" scrolling="no" frameborder="0" allowfullscreen="true" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>`;
+            }
+
+            // Handle Direct Video (mp4, mov, etc)
+            const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video') || url.includes('mp4');
+            if (isVideo) {
+                 return `<video src="${url}" class="${className} ${!isDetailView ? 'pointer-events-none' : ''}" ${isDetailView ? 'controls' : 'muted autoplay loop playsinline'}></video>`;
+            }
+
+            // Handle Images
             return `<img src="${url}" class="${className}" onerror="this.src='https://via.placeholder.com/400x500?text=Link+Error'">`;
         }
 
@@ -551,7 +541,7 @@
                 <div class="h-full flex flex-col bg-black overflow-y-auto no-scrollbar pb-32">
                     <div class="relative aspect-square">
                         <button onclick="window.setView('feed')" class="absolute top-4 left-4 z-10 p-2 bg-black/40 rounded-full"><i data-lucide="arrow-left"></i></button>
-                        ${getMediaHTML(p.mediaUrl, 'w-full h-full object-contain')}
+                        ${getMediaHTML(p.mediaUrl, 'w-full h-full object-contain', true)}
                     </div>
                     <div class="p-6 space-y-6 bg-zinc-950 flex-1 rounded-t-[3rem] -mt-10 border-t border-white/5 relative z-10 shadow-2xl">
                         <div class="flex justify-between items-start">
