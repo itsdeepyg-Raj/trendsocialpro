@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>TrendSocial Pro | itsdeepyg@gmail.com</title>
-    <link rel="manifest" href="manifest.json">
+    <title>TrendSocial Pro | Global Marketplace</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -24,14 +23,16 @@
         .badge-admin { background: #f59e0b; color: #000; }
         .badge-reseller { background: #6366f1; color: #fff; }
         .badge-buyer { background: #27272a; color: #a1a1aa; }
+        .badge-pending { background: #3f3f46; color: #a1a1aa; border: 1px dashed #71717a; }
         .avatar { width: 44px; height: 44px; border-radius: 14px; object-fit: cover; background: #27272a; border: 1px solid rgba(255,255,255,0.1); }
     </style>
 </head>
 <body class="bg-black">
 
     <div id="app" class="max-w-md mx-auto h-screen flex flex-col relative overflow-hidden bg-zinc-950 shadow-2xl border-x border-zinc-900">
-        <div id="loading" class="flex-1 flex items-center justify-center">
+        <div id="loading" class="flex-1 flex items-center justify-center flex-col gap-4">
             <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500"></div>
+            <p id="loadingText" class="text-xs font-black uppercase tracking-widest text-zinc-500">Loading App...</p>
         </div>
     </div>
 
@@ -39,7 +40,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { 
             getAuth, onAuthStateChanged, signOut, signInAnonymously, 
-            sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink 
+            signInWithEmailAndPassword, createUserWithEmailAndPassword 
         } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
         import { 
             getFirestore, collection, doc, setDoc, getDoc, 
@@ -55,7 +56,7 @@
             appId: "1:859903608854:web:82b46edf364994f7cbcd37"
         };
 
-        const appId = 'trend-social-v17-admin-master'; 
+        const appId = 'trend-social-stable-v22'; 
         const HELP_EMAIL = "itsdeepyg@gmail.com";
         const HELP_WHATSAPP = "+910000000000"; 
         
@@ -63,8 +64,9 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
+        // --- GLOBAL STATE ---
         let currentUser = null;
-        let userProfile = { role: 'buyer', currency: 'USD', photo: '' };
+        let userProfile = { role: 'buyer', currency: 'USD' };
         let isAdmin = false;
         let isReseller = false;
         let products = [];
@@ -74,14 +76,13 @@
         let searchQuery = "";
         let selectedProduct = null;
         let activeChatRecipient = null;
-        let listenersInitialized = false;
 
         const rates = { USD: 1, INR: 83, EUR: 0.92 };
         const symbols = { USD: '$', INR: '₹', EUR: '€' };
 
         const appContainer = document.getElementById('app');
 
-        // --- GLOBAL WINDOW ATTACHMENTS ---
+        // --- GLOBAL FUNCTION EXPORTS ---
         window.setView = (view, params = null) => {
             activeView = view;
             if (params) {
@@ -96,28 +97,17 @@
             render();
         };
 
-        window.toggleWishlist = async (productId) => {
-            if (currentUser.isAnonymous) { window.setView('auth'); return; }
-            const wishRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'wishlist', productId);
-            const prodRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', productId);
-            if (wishlist.has(productId)) {
-                await deleteDoc(wishRef);
-                await updateDoc(prodRef, { wishlistCount: increment(-1) });
-            } else {
-                await setDoc(wishRef, { addedAt: serverTimestamp() });
-                await updateDoc(prodRef, { wishlistCount: increment(1) });
-            }
-        };
-
-        window.handleDelete = async (id) => {
-            if (confirm("Delete this product permanently?")) {
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
-            }
+        window.logout = async () => {
+            await signOut(auth);
+            window.location.reload();
         };
 
         window.updateProfile = async (d) => {
+            if (!currentUser || currentUser.isAnonymous) return;
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', currentUser.uid), d);
             userProfile = {...userProfile, ...d};
+            isAdmin = userProfile.role === 'admin';
+            isReseller = userProfile.role === 'reseller';
             render();
         };
 
@@ -126,56 +116,61 @@
             alert("Verification Success: User is now " + role);
         };
 
-        window.logout = async () => {
-            await signOut(auth);
-            window.location.reload();
-        };
-
-        // --- AUTH SYSTEM ---
-        const handleEmailLinkSignIn = async () => {
-            if (isSignInWithEmailLink(auth, window.location.href)) {
-                let email = window.localStorage.getItem('emailForSignIn');
-                if (!email) email = window.prompt('Confirm your email for login:');
-                if (!email) return;
-                try {
-                    await signInWithEmailLink(auth, email, window.location.href);
-                    window.localStorage.removeItem('emailForSignIn');
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                } catch (error) { alert("Magic link error: " + error.message); }
+        window.handleDeleteProduct = async (id) => {
+            if (confirm("Delete this listing permanently?")) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
             }
         };
 
+        // --- AUTH & DATA LOGIC ---
         const initAuth = async () => {
-            await handleEmailLinkSignIn();
             onAuthStateChanged(auth, async (user) => {
                 currentUser = user;
                 if (user && !user.isAnonymous) {
                     const profileRef = doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid);
                     const profileSnap = await getDoc(profileRef);
+                    
                     if (profileSnap.exists()) {
                         userProfile = profileSnap.data();
                     } else {
+                        // NEW USER CREATION LOGIC
                         const target = window.localStorage.getItem('targetRole') || 'buyer';
                         userProfile = { uid: user.uid, role: target, currency: 'USD', photo: '', joinedAt: new Date().toISOString() };
                         await setDoc(profileRef, userProfile);
+                        // Clean up
+                        window.localStorage.removeItem('targetRole');
                     }
 
-                    // MASTER ADMIN AUTO-CLAIM
-                    const adminRef = doc(db, 'artifacts', appId, 'public', 'data', 'adminConfig', 'settings');
-                    const adminSnap = await getDoc(adminRef);
-                    if (!adminSnap.exists()) {
-                        await setDoc(adminRef, { ownerId: user.uid });
-                        isAdmin = true;
-                    } else {
-                        isAdmin = adminSnap.data().ownerId === user.uid;
+                    // MASTER OVERRIDE FOR YOUR EMAIL
+                    if (user.email === HELP_EMAIL) {
+                        await updateDoc(profileRef, { role: 'admin' });
+                        userProfile.role = 'admin';
                     }
-                    if (isAdmin) userProfile.role = 'admin';
-                    isReseller = userProfile.role === 'reseller' || isAdmin; 
+                    
+                    // Set global flags
+                    isAdmin = userProfile.role === 'admin';
+                    isReseller = userProfile.role === 'reseller';
+                    
+                    initListeners();
 
-                    if (!listenersInitialized) { initListeners(); listenersInitialized = true; }
+                    // AUTO-REDIRECT FROM AUTH SCREEN ON SUCCESS
+                    if (activeView === 'auth') {
+                        // Redirect based on role
+                        activeView = 'profile'; 
+                        if (userProfile.role === 'buyer') activeView = 'feed';
+                    }
                 } else {
-                    isAdmin = false; isReseller = false;
-                    if (!user) signInAnonymously(auth);
+                    userProfile = { role: 'buyer', currency: 'USD' };
+                    isAdmin = false;
+                    isReseller = false;
+                    
+                    if (!user) {
+                        try {
+                           await signInAnonymously(auth);
+                        } catch (e) {
+                            console.log("Anon auth error:", e);
+                        }
+                    }
                 }
                 render();
             });
@@ -186,17 +181,12 @@
                 products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 render();
             });
-            if (currentUser && !currentUser.isAnonymous) {
-                onSnapshot(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'wishlist'), (snapshot) => {
-                    wishlist = new Set(snapshot.docs.map(d => d.id));
-                    render();
-                });
-            }
         };
 
         // --- RENDER ENGINE ---
         function render() {
             if (!currentUser) return;
+            
             switch (activeView) {
                 case 'feed': renderFeed(); break;
                 case 'product': renderProductDetail(); break;
@@ -214,19 +204,19 @@
         }
 
         function renderHeader() {
-            const photoUrl = userProfile.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`;
+            const photoUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.uid || 'guest'}`;
             return `
                 <header class="p-4 flex justify-between items-center glass sticky top-0 z-50">
                     <div class="flex items-center gap-3" onclick="window.setView('profile')">
                         <img src="${photoUrl}" class="avatar" />
                         <div class="flex flex-col">
                             <h1 class="text-sm font-black tracking-tighter italic uppercase">Trend<span class="text-indigo-500">Social</span></h1>
-                            <p class="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">${userProfile.role} Account</p>
+                            <p class="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">${userProfile.role || 'Guest'} Portal</p>
                         </div>
                     </div>
                     <div class="flex gap-1">
-                        ${isAdmin ? `<button onclick="window.setView('admin')" class="p-2 hover:bg-zinc-800 rounded-full text-amber-500"><i data-lucide="shield-check"></i></button>` : ''}
-                        ${isReseller ? `<button onclick="window.setView('reseller_hub')" class="p-2 hover:bg-zinc-800 rounded-full text-indigo-500"><i data-lucide="plus-circle"></i></button>` : ''}
+                        ${userProfile.role === 'admin' ? `<button onclick="window.setView('admin')" class="p-2 hover:bg-zinc-800 rounded-full text-amber-500"><i data-lucide="shield-check"></i></button>` : ''}
+                        ${userProfile.role === 'reseller' || userProfile.role === 'admin' ? `<button onclick="window.setView('reseller_hub')" class="p-2 hover:bg-zinc-800 rounded-full text-indigo-500"><i data-lucide="plus-circle"></i></button>` : ''}
                     </div>
                 </header>
             `;
@@ -244,12 +234,12 @@
 
         function renderFeed() {
             let filtered = activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory);
-            if (searchQuery) filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase()));
+            if (searchQuery) filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
             appContainer.innerHTML = renderHeader() + `
                 <div class="p-4 border-b border-zinc-900 bg-black sticky top-[73px] z-40 space-y-4">
                     <div class="relative">
-                        <input type="text" placeholder="Search Paithani, Luxury, Sarees..." oninput="window.handleSearch(this.value)" class="pl-10 text-xs py-3" value="${searchQuery}" />
+                        <input type="text" placeholder="Search Paithani, Luxury, Men..." oninput="window.handleSearch(this.value)" class="pl-10 text-xs py-3" value="${searchQuery}" />
                         <i data-lucide="search" class="absolute left-3 top-3.5 text-zinc-600" size="16"></i>
                     </div>
                     <div class="flex gap-2 overflow-x-auto no-scrollbar">
@@ -263,65 +253,59 @@
                 <main class="flex-1 overflow-y-auto pb-24 no-scrollbar">
                     <div class="grid grid-cols-2 gap-px bg-zinc-900">
                         ${filtered.map(p => `
-                            <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden" onclick='window.setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
+                            <div class="bg-zinc-950 aspect-3-4 relative cursor-pointer overflow-hidden border-b border-zinc-900" onclick='window.setView("product", ${JSON.stringify(p).replace(/'/g, "&apos;")})'>
                                 ${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}
-                                <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/30 to-transparent">
+                                <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/40 to-transparent">
                                     <p class="font-bold text-[10px] truncate uppercase tracking-tight">${p.title}</p>
                                     <p class="text-indigo-500 font-black text-[10px] mt-0.5">${formatPrice(p.price)}</p>
                                 </div>
                             </div>
                         `).join('')}
                     </div>
-                    ${filtered.length === 0 ? '<p class="py-20 text-center text-zinc-800 uppercase font-black text-[10px] italic">No Products Found</p>' : ''}
                 </main>
             ` + renderNav();
             window.activeCategory = activeCategory;
             window.render = render;
         }
 
-        // --- ADMIN DASHBOARD ---
         function renderAdminDashboard() {
             appContainer.innerHTML = renderHeader() + `
                 <div class="p-6 space-y-8 flex-1 overflow-y-auto no-scrollbar pb-32">
                     <div class="flex items-center gap-3">
                         <div class="p-2 bg-amber-500/10 text-amber-500 rounded-xl"><i data-lucide="shield-check"></i></div>
-                        <h2 class="text-xl font-black uppercase text-amber-500 italic">Master Control Panel</h2>
+                        <h2 class="text-xl font-black uppercase text-amber-500 italic">Master Control</h2>
                     </div>
 
                     <div class="grid grid-cols-1 gap-4">
-                        <div onclick="window.setView('reseller_hub')" class="card bg-indigo-600/10 border-indigo-600/20 flex items-center justify-between shadow-2xl shadow-indigo-600/5">
+                        <div onclick="window.setView('reseller_hub')" class="card border-indigo-500/50 bg-indigo-600/10 flex items-center justify-between">
                             <div>
                                 <h3 class="font-black text-xs uppercase text-indigo-400">Sell as Admin</h3>
-                                <p class="text-[9px] text-zinc-500 mt-1 uppercase font-bold">List products directly to feed</p>
+                                <p class="text-[9px] text-zinc-500 font-bold">List items to the global feed</p>
                             </div>
                             <i data-lucide="plus" class="text-indigo-400"></i>
                         </div>
                         
                         <div class="space-y-4">
-                            <h3 class="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Reseller Verification Pool</h3>
-                            <div id="reqList" class="space-y-3"></div>
+                            <h3 class="text-[10px] font-black uppercase text-zinc-500">Pending Approvals</h3>
+                            <div id="adminReqList" class="space-y-3"></div>
                         </div>
                     </div>
                 </div>
             ` + renderNav();
 
             onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'), (snap) => {
-                const list = document.getElementById('reqList');
+                const list = document.getElementById('adminReqList');
                 if (!list) return;
                 const pending = snap.docs.map(d => ({id: d.id, ...d.data()})).filter(p => p.role === 'reseller_pending');
                 list.innerHTML = pending.length ? pending.map(r => `
                     <div class="card space-y-4 border-l-4 border-amber-500">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-black text-sm uppercase">${r.shopName || 'New Shop'}</p>
-                                <p class="text-[9px] text-zinc-500 font-bold">PAN: ${r.pan || 'N/A'} | IFSC: ${r.ifsc || 'N/A'}</p>
-                            </div>
-                        </div>
+                        <p class="font-black text-sm uppercase">${r.shopName || 'New Merchant'}</p>
+                        <p class="text-[9px] text-zinc-500 font-bold">PAN: ${r.pan || 'N/A'}</p>
                         <div class="flex gap-2">
-                            <button onclick="window.verifyUser('${r.id}', 'reseller')" class="flex-1 bg-green-600 py-3 rounded-xl font-black text-[9px] uppercase">Verify</button>
+                            <button onclick="window.verifyUser('${r.id}', 'reseller')" class="flex-1 bg-green-600 py-3 rounded-xl font-black text-[9px] uppercase">Approve</button>
                             <button onclick="window.verifyUser('${r.id}', 'buyer')" class="flex-1 bg-red-600/10 text-red-500 py-3 rounded-xl font-black text-[9px] uppercase">Deny</button>
                         </div>
-                    </div>`).join('') : `<p class="py-10 text-center text-zinc-800 text-[10px] font-black uppercase">All applications reviewed</p>`;
+                    </div>`).join('') : `<p class="py-10 text-center text-zinc-800 text-[10px] font-black uppercase">No pending requests</p>`;
             });
         }
 
@@ -357,7 +341,7 @@
                                     <div class="w-10 h-10 rounded-lg overflow-hidden">${getMediaHTML(p.mediaUrl, 'w-full h-full object-cover')}</div>
                                     <p class="text-[10px] font-black uppercase truncate max-w-[120px]">${p.title}</p>
                                 </div>
-                                <button onclick="window.handleDelete('${p.id}')" class="p-2 text-red-500"><i data-lucide="trash-2" size="16"></i></button>
+                                <button onclick="window.handleDeleteProduct('${p.id}')" class="p-2 text-red-500"><i data-lucide="trash-2" size="16"></i></button>
                             </div>
                         `).join('')}
                     </div>
@@ -402,9 +386,18 @@
                         </div>
                     </div>
 
-                    <form id="authForm" class="hidden w-full space-y-4 animate-in slide-in-from-bottom duration-300">
-                        <input id="email" type="email" placeholder="Enter your email" required />
-                        <button type="submit" class="w-full btn-primary py-5">Send Magic Login Link</button>
+                    <form id="authForm" class="hidden w-full space-y-4 animate-in slide-in-from-bottom duration-300" onsubmit="return false;">
+                        <div class="text-center">
+                             <h3 id="formTitle" class="font-black text-sm uppercase text-indigo-500 mb-4">Login</h3>
+                        </div>
+                        <input id="email" type="email" placeholder="Email" autocomplete="email" required />
+                        <input id="password" type="password" placeholder="Password" autocomplete="current-password" required />
+                        
+                        <div class="flex gap-2">
+                             <button type="button" id="loginBtn" class="flex-1 btn-primary py-4 text-xs">Log In</button>
+                             <button type="button" id="signupBtn" class="flex-1 bg-zinc-800 text-white rounded-2xl py-4 font-black uppercase text-xs">Create Account</button>
+                        </div>
+
                         <button type="button" onclick="window.location.reload()" class="w-full text-[10px] font-black uppercase text-zinc-600">Back</button>
                     </form>
                 </div>
@@ -412,33 +405,80 @@
             window.loginFlow = (role) => {
                 document.getElementById('gateCards').classList.add('hidden');
                 document.getElementById('authForm').classList.remove('hidden');
+                document.getElementById('formTitle').innerText = role === 'admin' ? 'Master Access' : (role + ' Access');
+                
                 window.localStorage.setItem('targetRole', role === 'reseller' ? 'reseller_pending' : role);
-                document.getElementById('authForm').onsubmit = async (e) => {
-                    e.preventDefault();
+                
+                // Login Handler
+                document.getElementById('loginBtn').onclick = async function() {
                     const email = document.getElementById('email').value;
-                    await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
-                    window.localStorage.setItem('emailForSignIn', email);
-                    alert("Magic link sent! Check your inbox to sign in.");
+                    const pass = document.getElementById('password').value;
+                    if (!email || !pass) { alert("Please fill in both email and password."); return; }
+                    
+                    this.innerText = "Logging in...";
+                    this.disabled = true;
+
+                    try {
+                        await signInWithEmailAndPassword(auth, email, pass);
+                        // Auth listener handles redirect
+                    } catch (e) {
+                        alert("Login Failed: " + e.message);
+                        this.innerText = "Log In";
+                        this.disabled = false;
+                    }
+                };
+
+                // Signup Handler
+                document.getElementById('signupBtn').onclick = async function() {
+                    const email = document.getElementById('email').value;
+                    const pass = document.getElementById('password').value;
+                    if (!email || !pass) { alert("Please fill in both email and password."); return; }
+
+                    this.innerText = "Creating...";
+                    this.disabled = true;
+
+                    try {
+                        await createUserWithEmailAndPassword(auth, email, pass);
+                        // Auth listener handles redirect
+                    } catch (e) {
+                        if (e.code === 'auth/operation-not-allowed') {
+                            alert("Sign-up is currently disabled. Please enable 'Email/Password' in your Firebase Console -> Authentication.");
+                        } else if (e.code === 'auth/email-already-in-use') {
+                             alert("This email is already registered. Please use 'Log In' instead.");
+                        } else if (e.code === 'auth/weak-password') {
+                             alert("Password should be at least 6 characters.");
+                        } else {
+                            alert("Signup Failed: " + e.message);
+                        }
+                        this.innerText = "Create Account";
+                        this.disabled = false;
+                    }
                 };
             };
         }
 
         function renderProfile() {
             const photoUrl = userProfile.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`;
+            const isPending = userProfile.role === 'reseller_pending';
+
             appContainer.innerHTML = `
                 <div class="p-8 space-y-10 flex-1 overflow-y-auto pb-32 no-scrollbar">
                     <div class="text-center space-y-4">
                         <img src="${photoUrl}" class="w-24 h-24 rounded-[32px] mx-auto border-4 border-zinc-900 shadow-2xl" />
                         <div>
                             <h2 class="text-2xl font-black uppercase tracking-tighter">${currentUser.isAnonymous ? 'Guest' : (currentUser.email || 'Member')}</h2>
-                            <span class="badge ${isAdmin ? 'badge-admin' : (isReseller ? 'badge-reseller' : 'badge-buyer')}">${userProfile.role}</span>
+                            <span class="badge ${isAdmin ? 'badge-admin' : (isReseller ? 'badge-reseller' : (isPending ? 'badge-pending' : 'badge-buyer'))}">${userProfile.role.replace('_', ' ')}</span>
                         </div>
                     </div>
                     
                     <div class="space-y-3">
                         ${isAdmin ? `<button onclick="window.setView('admin')" class="w-full bg-amber-500 text-black p-5 rounded-3xl font-black uppercase text-xs shadow-xl shadow-amber-500/10">Admin Control Panel</button>` : ''}
+                        
                         ${isReseller ? `<button onclick="window.setView('reseller_hub')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white shadow-xl shadow-indigo-600/10">Open Seller Hub</button>` : ''}
-                        ${!isReseller && userProfile.role === 'buyer' && !isAdmin && !currentUser.isAnonymous ? `<button onclick="window.setView('reseller_reg')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white">Apply as Reseller</button>` : ''}
+                        
+                        ${isPending ? `<div class="card border-dashed border-zinc-600 text-center"><h3 class="font-black text-zinc-400 text-xs uppercase">Verification Pending</h3><p class="text-[9px] text-zinc-500 mt-2">Admin is reviewing your details.</p></div>` : ''}
+
+                        ${!isReseller && !isPending && userProfile.role === 'buyer' && !isAdmin && !currentUser.isAnonymous ? `<button onclick="window.setView('reseller_reg')" class="w-full bg-indigo-600 p-5 rounded-3xl font-black uppercase text-xs text-white">Apply as Reseller</button>` : ''}
                         
                         <div class="card space-y-4 !bg-zinc-900/50">
                             <p class="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Currency Preferences</p>
